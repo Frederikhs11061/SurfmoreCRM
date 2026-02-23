@@ -3,12 +3,12 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   'Butik & Webshop','Skoler & klubber','Folkeskoler','Børnehaver','Efterskoler',
   'Gymnasium','Højskoler','Skateparks','Spejdergrupper','Kajakklubber',
   'Drager & Legetøj','Indkøbsforeninger','Havne','Naturskoler, centre & vejledere','Andet',
 ];
-const COUNTRIES = ['Danmark','Norge','Sverige'];
+const DEFAULT_COUNTRIES = ['Danmark','Norge','Sverige'];
 const STATUS_OPTIONS = [
   { value:'not_contacted', label:'Ikke kontaktet', color:'#64748b' },
   { value:'outreach_done', label:'Outreach sendt',  color:'#f59e0b' },
@@ -62,19 +62,41 @@ function parseOtrField(raw, isSale=false) {
   }];
 }
 
-// Map Shopify/sheet type to CRM category
+// Map type string to CRM category
 function mapCategory(type, defaultCat) {
   if(!type) return defaultCat;
   const t = type.toLowerCase();
-  if(t.includes('vinterbade') || t.includes('badeklub') || t.includes('badelaug')) return 'Skoler & klubber';
+  if(t.includes('vinterbade')||t.includes('badeklub')||t.includes('badelaug')||t.includes('saunaclub')||t.includes('saunaklub')) return 'Skoler & klubber';
   if(t.includes('kajak')) return 'Kajakklubber';
-  if(t.includes('surf') || t.includes('wake') || t.includes('vandski') || t.includes('kite') || t.includes('sup') || t.includes('wind')) return 'Skoler & klubber';
-  if(t.includes('sejl')) return 'Skoler & klubber';
-  if(t.includes('ski') || t.includes('skiklub')) return 'Skoler & klubber';
+  if(t.includes('surf')||t.includes('wake')||t.includes('vandski')||t.includes('kite')||t.includes('sup')||t.includes('wind')||t.includes('sejlklub')||t.includes('blokart')) return 'Skoler & klubber';
   if(t.includes('spejder')) return 'Spejdergrupper';
-  if(t.includes('skole') || t.includes('gymnasium') || t.includes('efterskole')) return 'Folkeskoler';
-  if(t.includes('butik') || t.includes('webshop') || t.includes('shop')) return 'Butik & Webshop';
+  if(t.includes('efterskole')) return 'Efterskoler';
+  if(t.includes('gymnasium')||t.includes('gym')) return 'Gymnasium';
+  if(t.includes('folkeskole')||t.includes('grundskole')) return 'Folkeskoler';
+  if(t.includes('børnehave')||t.includes('vuggestue')||t.includes('daginstitut')) return 'Børnehaver';
+  if(t.includes('naturskole')||t.includes('naturcenter')||t.includes('friluft')) return 'Naturskoler, centre & vejledere';
+  if(t.includes('skiklub')||t.includes('ski ')) return 'Skoler & klubber';
+  if(t.includes('butik')||t.includes('webshop')||t.includes('shop')) return 'Butik & Webshop';
+  if(t.includes('havn')) return 'Havne';
+  if(t.includes('indkøb')) return 'Indkøbsforeninger';
+  if(t.includes('drager')||t.includes('legetøj')) return 'Drager & Legetøj';
   return defaultCat;
+}
+
+// Detect country from string, add new ones dynamically
+function detectCountry(raw, countries, defaultCountry) {
+  if(!raw) return defaultCountry;
+  const r = raw.trim();
+  // Normalize common variants
+  const norm = {'damark':'Danmark','dk':'Danmark','denmark':'Danmark','norway':'Norge','no':'Norge','sweden':'Sverige','se':'Sverige','se':'Sverige','finland':'Finland','fi':'Finland','germany':'Tyskland','de':'Tyskland','netherlands':'Holland','nl':'Holland','uk':'UK','gb':'UK','usa':'USA','us':'USA','france':'Frankrig','fr':'Frankrig','spain':'Spanien','es':'Spanien','poland':'Polen','pl':'Polen','faroe':'Færøerne','fo':'Færøerne'};
+  const lo = r.toLowerCase();
+  if(norm[lo]) return norm[lo];
+  // Check if it matches any known country
+  const known = countries.find(c => c.toLowerCase() === lo || lo.startsWith(c.toLowerCase()));
+  if(known) return known;
+  // If it looks like a country name (capitalized, no special chars), return it as new country
+  if(r.length > 1 && r.length < 30 && /^[A-Za-zÆØÅæøåÄÖÜäöü\s\-]+$/.test(r) && r[0] === r[0].toUpperCase()) return r;
+  return defaultCountry;
 }
 
 function parseLine(line, cat, country) {
@@ -217,6 +239,8 @@ function StatusBadge({value}){
 // ─── Main App ────────────────────────────────────────────────────────────────
 export default function CRMApp() {
   const [leads, setLeads] = useState([]);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [countries, setCountries] = useState(DEFAULT_COUNTRIES);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   const [sel, setSel] = useState(null);
@@ -301,7 +325,18 @@ export default function CRMApp() {
     nc:leads.filter(l=>l.status==='not_contacted').length,
   };
 
-  const runP = txt => { const rows = parseCSVFull(txt.trim()); return rows.map(row=>parseLine(row,iCat,iCountry)).filter(Boolean); };
+  const runP = txt => {
+    const rows = parseCSVFull(txt.trim());
+    const newCountries = [...countries];
+    const parsed = rows.map(row => {
+      const result = parseLine(row, iCat, iCountry, newCountries);
+      if(result && result._newCountry && !newCountries.includes(result._newCountry)) {
+        newCountries.push(result._newCountry);
+      }
+      return result;
+    }).filter(Boolean);
+    return parsed;
+  };
 
   const filtered = leads.filter(l=>{
     if(fCat!=='Alle'&&l.category!==fCat)return false;
@@ -588,7 +623,7 @@ export default function CRMApp() {
             <div style={{...CC.card,padding:20}}>
               <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                {CATEGORIES.map(cat=>{
+                {categories.map(cat=>{
                   const cnt=leads.filter(l=>l.category===cat).length;
                   const wonC=leads.filter(l=>l.category===cat&&l.status==='won').length;
                   if(!cnt)return null;
@@ -640,8 +675,8 @@ export default function CRMApp() {
                 Format: Navn, By, Land, Mail, B2B Outreach, Produkt, Hvem?, Notat
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
-                <div><label>Standardkategori</label><select className="inp" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
-                <div><label>Standardland</label><select className="inp" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}}>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Standardkategori</label><select className="inp" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}}>{categories.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Standardland</label><select className="inp" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}}>{countries.map(c=><option key={c}>{c}</option>)}</select></div>
               </div>
               <div style={{marginBottom:12}}>
                 <label>Upload fil (CSV / TSV / TXT)</label>
@@ -696,8 +731,8 @@ export default function CRMApp() {
                 {[['Navn *','name','text'],['Email','email','email'],['Telefon','phone','text'],['By','city','text']].map(([lb,k,t])=>(
                   <div key={k}><label>{lb}</label><input className="inp" type={t} value={editLead[k]||''} onChange={e=>setEditLead({...editLead,[k]:e.target.value})}/></div>
                 ))}
-                <div><label>Kategori</label><select className="inp" value={editLead.category} onChange={e=>setEditLead({...editLead,category:e.target.value})}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
-                <div><label>Land</label><select className="inp" value={editLead.country} onChange={e=>setEditLead({...editLead,country:e.target.value})}>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Kategori</label><select className="inp" value={editLead.category} onChange={e=>setEditLead({...editLead,category:e.target.value})}>{categories.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Land</label><select className="inp" value={editLead.country} onChange={e=>setEditLead({...editLead,country:e.target.value})}>{countries.map(c=><option key={c}>{c}</option>)}</select></div>
                 <div><label>Status</label><select className="inp" value={editLead.status} onChange={e=>setEditLead({...editLead,status:e.target.value})}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                 <div><label>Kontaktperson</label><input className="inp" value={editLead.contact_person||''} onChange={e=>setEditLead({...editLead,contact_person:e.target.value})}/></div>
               </div>
@@ -791,6 +826,41 @@ export default function CRMApp() {
         )}
 
         {/* LIST */}
+        {view==='settings'&&(
+          <div style={{padding:28,maxWidth:600}}>
+            <h2 style={{fontWeight:700,marginBottom:20}}>Indstillinger</h2>
+            <div style={{...CC.card,padding:22,marginBottom:16}}>
+              <div className="sl">Kategorier</div>
+              <div style={{fontSize:12,color:'#6b7280',marginBottom:14}}>Slet kategorier du ikke bruger. Leads i den kategori flyttes til "Andet".</div>
+              {categories.map(cat=>(
+                <div key={cat} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #0d1420'}}>
+                  <span style={{fontSize:14}}>{cat}</span>
+                  <button className="btn btn-d" style={{padding:'3px 10px',fontSize:11}} onClick={()=>{
+                    if(!confirm('Slet kategorien "'+cat+'"? Leads flyttes til "Andet".')) return;
+                    setLeads(leads.map(l=>l.category===cat?{...l,category:'Andet'}:l));
+                    setCategories(categories.filter(c=>c!==cat));
+                    // Update in DB
+                    supabase.from('leads').update({category:'Andet'}).eq('category',cat).then(()=>msg('Kategori slettet'));
+                  }}>Slet</button>
+                </div>
+              ))}
+              <div style={{marginTop:14,display:'flex',gap:8}}>
+                <input className="inp" placeholder="Ny kategori..." id="newCatInput" style={{flex:1}} onKeyDown={e=>{if(e.key==='Enter'){const v=e.target.value.trim();if(v&&!categories.includes(v)){setCategories([...categories,v]);e.target.value='';}}}}/>
+                <button className="btn btn-p" style={{padding:'8px 14px'}} onClick={()=>{const el=document.getElementById('newCatInput');const v=el.value.trim();if(v&&!categories.includes(v)){setCategories([...categories,v]);el.value='';}}}>Tilføj</button>
+              </div>
+            </div>
+            <div style={{...CC.card,padding:22}}>
+              <div className="sl">Lande</div>
+              {countries.map(c=>(
+                <div key={c} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #0d1420'}}>
+                  <span style={{fontSize:14}}>{c}</span>
+                  {!['Danmark','Norge','Sverige'].includes(c)&&<button className="btn btn-d" style={{padding:'3px 10px',fontSize:11}} onClick={()=>{if(confirm('Slet land "'+c+'"?'))setCountries(countries.filter(x=>x!==c));}}>Slet</button>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {view==='list'&&(
           <div style={{padding:28}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
@@ -823,9 +893,9 @@ export default function CRMApp() {
 
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <input className="inp" style={{maxWidth:200}} placeholder="Søg..." value={search} onChange={e=>setSearch(e.target.value)}/>
-              <select className="inp" style={{maxWidth:190}} value={fCat} onChange={e=>setFCat(e.target.value)}><option>Alle</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select>
+              <select className="inp" style={{maxWidth:190}} value={fCat} onChange={e=>setFCat(e.target.value)}><option>Alle</option>{categories.map(c=><option key={c}>{c}</option>)}</select>
               <select className="inp" style={{maxWidth:155}} value={fStatus} onChange={e=>setFStatus(e.target.value)}><option value="Alle">Alle statusser</option>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>
-              <select className="inp" style={{maxWidth:120}} value={fCountry} onChange={e=>setFCountry(e.target.value)}><option value="Alle">Alle lande</option>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
+              <select className="inp" style={{maxWidth:120}} value={fCountry} onChange={e=>setFCountry(e.target.value)}><option value="Alle">Alle lande</option>{countries.map(c=><option key={c}>{c}</option>)}</select>
               <span style={{fontSize:13,color:'#4b5563',marginLeft:'auto'}}>{filtered.length} leads</span>
             </div>
 
