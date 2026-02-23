@@ -43,7 +43,15 @@ function isHeader(p){const l=p.map(x=>x.toLowerCase());return l.some(x=>x==='klu
 function findEmail(p){return p.findIndex(x=>/^[^\s@,]+@[^\s@,]+\.[^\s@,]{2,}$/.test(x.replace(/\s/g,'')));}
 
 // Detect if a field is a sale/revenue field ("Købt X stk", "Solgt X stk", "Bestilt X stk")
-function isSaleField(s){ return s && /købt|solgt|bestilt|leveret|faktura/i.test(s); }
+function isSaleField(s){ 
+  if(!s) return false;
+  // Must mention actual products/units - NOT just discount percentages or dashboard outreach
+  const hasSaleWord = /købt|solgt|bestilt|leveret|faktura/i.test(s);
+  const hasProduct = /stk|styk|pakke|produkt|secumar|redningsvest|vandkikker|board|vest|adapter/i.test(s);
+  // "15% til jeres medlemmer" is outreach, NOT a sale
+  const isJustDiscount = /^\d+%|^15%|^20%|rabat til jeres/i.test(s.trim()) && !hasProduct;
+  return hasSaleWord && (hasProduct || !isJustDiscount);
+}
 
 // Extract outreach entries from a text field
 function parseOtrField(raw, isSale=false) {
@@ -130,7 +138,7 @@ function parseLine(line, cat, country) {
     else if (has15pct) status = 'in_dialogue';
     else if (outreaches.length > 0) status = 'outreach_done';
 
-    const sale_info = saleField || (has15pct ? '15% medlemsrabat aftalt' : '');
+    const sale_info = saleField || '';
 
     if (!name && !email) return null;
     return { name, category: resolvedCat, country: ctry, email, phone:'', city:'', status, _outreaches: outreaches, notes: type ? 'Type: '+type : '', sale_info, contact_person:'', product:'' };
@@ -963,6 +971,19 @@ export default function CRMApp() {
                   <div><label>Af</label><input className="inp" style={{width:90}} value={bulkBy} onChange={e=>setBulkBy(e.target.value)}/></div>
                   <div><label>Note</label><input className="inp" style={{width:160}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
+                  <button className="btn btn-d" style={{alignSelf:'flex-end',padding:'8px 14px'}} disabled={saving||bulkSel.size===0} onClick={async()=>{
+                    if(!confirm('Slet '+bulkSel.size+' leads permanent?')) return;
+                    setSaving(true);
+                    try {
+                      const ids=[...bulkSel];
+                      await supabase.from('outreaches').delete().in('lead_id',ids);
+                      await supabase.from('leads').delete().in('id',ids);
+                      setLeads(leads.filter(l=>!bulkSel.has(l.id)));
+                      setBulkSel(new Set()); setBulk(false);
+                      msg(ids.length+' leads slettet');
+                    } catch(e){msg('Fejl: '+e.message,'err');}
+                    setSaving(false);
+                  }}>🗑 Slet valgte ({bulkSel.size})</button>
                 </div>
               </div>
             )}
