@@ -121,7 +121,7 @@ function parseLine(line, cat, country) {
     const type = p[1] || '';
     const ctry = knownC.find(c => (p[2]||'').toLowerCase().startsWith(c.toLowerCase())) || country;
     const email = p[3].replace(/\s/g,'');
-    const resolvedCat = mapCategory(type, cat);
+    const resolvedCat = type ? type : cat;  // Type value is used directly as category
 
     // Collect outreach columns (4,5,7) and udbytte/sale col (6)
     const otrFields = [p[4], p[5], p[7]].filter(x => x && x.trim() && !isSaleField(x));
@@ -132,10 +132,8 @@ function parseLine(line, cat, country) {
     if (saleField) { outreaches.push(...parseOtrField(saleField, true)); }
 
     const hasSale = !!saleField;
-    const has15pct = [p[4],p[5],p[6],p[7]].some(x => x && x.includes('15%'));
     let status = 'not_contacted';
     if (hasSale) status = 'won';
-    else if (has15pct) status = 'in_dialogue';
     else if (outreaches.length > 0) status = 'outreach_done';
 
     const sale_info = saleField || '';
@@ -1015,7 +1013,11 @@ export default function CRMApp() {
                       <td style={{padding:'10px 14px',color:'#4b5563',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email||'—'}</td>
                       <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.city||'—'}</td>
                       <td style={{padding:'10px 14px'}}><StatusBadge value={lead.status}/></td>
-                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12}}>{lead.outreaches.length}x · {lead.outreaches[lead.outreaches.length-1].date}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
+                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?(
+                        <div style={{fontSize:11,lineHeight:1.6}}>
+                          {lead.outreaches.map((o,i)=><div key={i} style={{whiteSpace:'nowrap'}}>{o.date||'—'}{o.by?' · '+o.by:''}</div>)}
+                        </div>
+                      ):<span style={{color:'#1f2937'}}>—</span>}</td>
                       <td style={{padding:'10px 14px'}}>{lead.sale_info?<span style={{color:'#4ade80',fontSize:12,fontWeight:600}}>{lead.sale_info.slice(0,32)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                     </tr>
                   ))}
