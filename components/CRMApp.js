@@ -3,11 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const DEFAULT_CATEGORIES = [
-  'Butik & Webshop','Skoler & klubber','Folkeskoler','Børnehaver','Efterskoler',
-  'Gymnasium','Højskoler','Skateparks','Spejdergrupper','Kajakklubber',
-  'Drager & Legetøj','Indkøbsforeninger','Havne','Naturskoler, centre & vejledere','Andet',
-];
+const DEFAULT_CATEGORIES = [];
 const DEFAULT_COUNTRIES = ['Danmark','Norge','Sverige'];
 const STATUS_OPTIONS = [
   { value:'not_contacted', label:'Ikke kontaktet', color:'#64748b' },
@@ -649,10 +645,20 @@ export default function CRMApp() {
                   const cnt=leads.filter(l=>l.category===cat).length;
                   const wonC=leads.filter(l=>l.category===cat&&l.status==='won').length;
                   if(!cnt)return null;
+                  const outC=leads.filter(l=>l.category===cat&&(l.status==='outreach_done'||l.status==='in_dialogue')).length;
                   return(
-                    <div key={cat} style={{...CC.inner,padding:'10px 14px',cursor:'pointer'}} onClick={()=>{setFCat(cat);setView('list');}}>
-                      <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{cat}</div>
-                      <div style={{fontSize:11,color:'#4b5563'}}>{cnt} leads · <span style={{color:'#22c55e'}}>{wonC} solgt</span></div>
+                    <div key={cat} style={{...CC.inner,padding:'10px 14px',cursor:'pointer',position:'relative'}} onClick={()=>{setFCat(cat);setView('list');}}>
+                      <button onClick={e=>{e.stopPropagation();if(!confirm('Slet kategorien "'+cat+'"? Alle leads slettes!'))return;
+                        supabase.from('leads').select('id').eq('category',cat).then(async({data})=>{if(data?.length){const ids=data.map(l=>l.id);await supabase.from('outreaches').delete().in('lead_id',ids);await supabase.from('leads').delete().eq('category',cat);}});
+                        setLeads(leads.filter(l=>l.category!==cat));setCategories(categories.filter(c=>c!==cat));msg('Slettet');
+                      }} style={{position:'absolute',top:6,right:6,background:'none',border:'none',color:'#4b5563',cursor:'pointer',fontSize:14,lineHeight:1,padding:'2px 4px'}} title="Slet kategori">×</button>
+                      <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>{cat}</div>
+                      <div style={{fontSize:11,color:'#4b5563'}}>{cnt} leads</div>
+                      <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
+                        {wonC>0&&<span style={{fontSize:10,color:'#22c55e',fontWeight:600}}>✓ {wonC} solgt</span>}
+                        {outC>0&&<span style={{fontSize:10,color:'#f59e0b',fontWeight:600}}>→ {outC} i gang</span>}
+                        {(cnt-wonC-outC)>0&&<span style={{fontSize:10,color:'#64748b'}}>◦ {cnt-wonC-outC} ikke kontaktet</span>}
+                      </div>
                     </div>
                   );
                 })}
@@ -719,8 +725,16 @@ export default function CRMApp() {
                 Format: Navn, By, Land, Mail, B2B Outreach, Produkt, Hvem?, Notat
               </div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
-                <div><label>Standardkategori</label><select className="inp" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}}>{categories.map(c=><option key={c}>{c}</option>)}</select></div>
-                <div><label>Standardland</label><select className="inp" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}}>{countries.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div>
+                  <label>Standardkategori (hvis ikke auto-detekteret)</label>
+                  <input className="inp" list="cat-list" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}} placeholder="Skriv eller vælg kategori..."/>
+                  <datalist id="cat-list">{categories.map(c=><option key={c} value={c}/>)}</datalist>
+                </div>
+                <div>
+                  <label>Standardland (hvis ikke i filen)</label>
+                  <input className="inp" list="country-list" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}} placeholder="Skriv eller vælg land..."/>
+                  <datalist id="country-list">{countries.map(c=><option key={c} value={c}/>)}</datalist>
+                </div>
               </div>
               <div style={{marginBottom:12}}>
                 <label>Upload fil (CSV / TSV / TXT)</label>
@@ -880,11 +894,18 @@ export default function CRMApp() {
                 <div key={cat} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #0d1420'}}>
                   <span style={{fontSize:14}}>{cat}</span>
                   <button className="btn btn-d" style={{padding:'3px 10px',fontSize:11}} onClick={()=>{
-                    if(!confirm('Slet kategorien "'+cat+'"? Leads flyttes til "Andet".')) return;
-                    setLeads(leads.map(l=>l.category===cat?{...l,category:'Andet'}:l));
+                    if(!confirm('Slet kategorien "'+cat+'"? Alle leads i kategorien slettes også!')) return;
+                    // Delete all leads in this category from DB
+                    supabase.from('leads').select('id').eq('category',cat).then(async ({data})=>{
+                      if(data&&data.length){
+                        const ids=data.map(l=>l.id);
+                        await supabase.from('outreaches').delete().in('lead_id',ids);
+                        await supabase.from('leads').delete().eq('category',cat);
+                      }
+                    });
+                    setLeads(leads.filter(l=>l.category!==cat));
                     setCategories(categories.filter(c=>c!==cat));
-                    // Update in DB
-                    supabase.from('leads').update({category:'Andet'}).eq('category',cat).then(()=>msg('Kategori slettet'));
+                    msg('Kategori og leads slettet');
                   }}>Slet</button>
                 </div>
               ))}
@@ -898,9 +919,13 @@ export default function CRMApp() {
               {countries.map(c=>(
                 <div key={c} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #0d1420'}}>
                   <span style={{fontSize:14}}>{c}</span>
-                  {!['Danmark','Norge','Sverige'].includes(c)&&<button className="btn btn-d" style={{padding:'3px 10px',fontSize:11}} onClick={()=>{if(confirm('Slet land "'+c+'"?'))setCountries(countries.filter(x=>x!==c));}}>Slet</button>}
+                  <button className="btn btn-d" style={{padding:'3px 10px',fontSize:11}} onClick={()=>{if(confirm('Slet land "'+c+'"?'))setCountries(countries.filter(x=>x!==c));}}>Slet</button>
                 </div>
               ))}
+              <div style={{marginTop:14,display:'flex',gap:8}}>
+                <input className="inp" placeholder="Nyt land..." id="newCountryInput" style={{flex:1}} onKeyDown={e=>{if(e.key==='Enter'){const v=e.target.value.trim();if(v&&!countries.includes(v)){setCountries([...countries,v]);e.target.value='';}}}}/> 
+                <button className="btn btn-p" style={{padding:'8px 14px'}} onClick={()=>{const el=document.getElementById('newCountryInput');const v=el.value.trim();if(v&&!countries.includes(v)){setCountries([...countries,v]);el.value='';}else if(!v){}else msg('Land findes allerede','err');}}>Tilføj</button>
+              </div>
             </div>
           </div>
         )}
