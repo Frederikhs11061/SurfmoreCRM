@@ -239,6 +239,7 @@ function StatusBadge({value}){
 // ─── Main App ────────────────────────────────────────────────────────────────
 export default function CRMApp() {
   const [leads, setLeads] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [countries, setCountries] = useState(DEFAULT_COUNTRIES);
   const [loading, setLoading] = useState(true);
@@ -307,6 +308,10 @@ export default function CRMApp() {
   };
 
   const msg = (m, t='ok') => { setToast({m,t}); setTimeout(()=>setToast(null), 3000); };
+  const logActivity = (text, type='info') => {
+    const entry = { id: Date.now(), text, type, time: new Date() };
+    setActivity(prev => [entry, ...prev].slice(0, 20));
+  };
 
   const paid=shopOrders.filter(o=>o.financial_status==='paid'||o.financial_status==='partially_paid');
   const totalRev=paid.reduce((s,o)=>s+parseFloat(o.total_price||0),0);
@@ -368,11 +373,13 @@ export default function CRMApp() {
         if(error) throw error;
         setLeads(leads.map(l=>l.id===editLead.id?{...l,...payload}:l));
         msg('Opdateret');
+        logActivity('Opdaterede lead: '+editLead.name, 'edit');
       } else {
         const {data,error} = await supabase.from('leads').insert(payload).select().single();
         if(error) throw error;
         setLeads([{...data,outreaches:[]},...leads]);
         msg('Tilføjet');
+        logActivity('Tilføjede nyt lead: '+editLead.name, 'new');
       }
       setView('list'); setEditLead(null);
     } catch(e) { msg('Fejl: '+e.message,'err'); }
@@ -411,7 +418,7 @@ export default function CRMApp() {
         setLeads(leads.map(l=>l.id===lead.id?updated:l));
         setSel(updated);
       }
-      setNewOtr({...DEFAULT_OTR}); msg('Outreach tilføjet');
+      setNewOtr({...DEFAULT_OTR}); msg('Outreach tilføjet'); logActivity('Outreach tilføjet til: '+lead.name, 'outreach');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
   };
 
@@ -443,7 +450,7 @@ export default function CRMApp() {
       if(error) throw error;
       const updated={...lead,status};
       setLeads(leads.map(l=>l.id===lead.id?updated:l));
-      setSel(updated); msg('Status opdateret');
+      setSel(updated); msg('Status opdateret'); logActivity(lead.name+': status → '+STATUS_OPTIONS.find(s=>s.value===status)?.label, 'status');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
   };
 
@@ -488,6 +495,7 @@ export default function CRMApp() {
       if(newCats.length !== categories.length) setCategories(newCats);
       if(newCtries.length !== countries.length) setCountries(newCtries);
       setIText(''); setIPrev([]); setView('list');
+      logActivity('Importerede '+iPrev.length+' leads', 'import');
       msg(iPrev.length+' leads importeret');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
@@ -533,6 +541,7 @@ export default function CRMApp() {
     {id:'dashboard',label:'Dashboard'},
     {id:'list',label:'Leads'},
     {id:'import',label:'Importér'},
+    {id:'settings',label:'Indstillinger'},
     {id:'shopify_settings',label:'Shopify'},
   ];
 
@@ -632,8 +641,9 @@ export default function CRMApp() {
               </div>
             )}
 
-            <div style={{...CC.card,padding:20}}>
-              <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+              <div style={{...CC.card,padding:20}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                 {categories.map(cat=>{
                   const cnt=leads.filter(l=>l.category===cat).length;
@@ -646,6 +656,28 @@ export default function CRMApp() {
                     </div>
                   );
                 })}
+              </div>
+              </div>
+              <div style={{...CC.card,padding:20}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Recent Activity</div>
+                {activity.length===0&&<div style={{color:'#4b5563',fontSize:13,textAlign:'center',padding:'20px 0'}}>Ingen aktivitet endnu — tilføj leads eller outreach</div>}
+                <div style={{display:'flex',flexDirection:'column'}}>
+                {activity.map(a=>{
+                  const icons={new:'✦',edit:'✎',outreach:'✉',import:'↑',status:'◈',won:'🎉',info:'·'};
+                  const colors={new:'#0ea5e9',edit:'#6366f1',outreach:'#f59e0b',import:'#a78bfa',status:'#64748b',won:'#22c55e',info:'#4b5563'};
+                  const ago=Math.round((Date.now()-a.time)/60000);
+                  const agoStr=ago<1?'Lige nu':ago<60?ago+' min siden':Math.round(ago/60)+' t siden';
+                  return(
+                    <div key={a.id} style={{display:'flex',gap:12,alignItems:'flex-start',padding:'10px 0',borderBottom:'1px solid #0d1420'}}>
+                      <div style={{width:28,height:28,borderRadius:'50%',background:(colors[a.type]||'#4b5563')+'22',border:'1px solid '+(colors[a.type]||'#4b5563')+'44',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,flexShrink:0}}>{icons[a.type]||'·'}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,color:'#e2e8f0',lineHeight:1.4}}>{a.text}</div>
+                        <div style={{fontSize:11,color:'#4b5563',marginTop:2}}>{agoStr}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                </div>
               </div>
             </div>
           </div>
