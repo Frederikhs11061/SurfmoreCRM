@@ -724,18 +724,7 @@ export default function CRMApp() {
               <div style={{background:'#080d18',border:'1px solid #1a2332',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#4b5563',fontFamily:'monospace'}}>
                 Format: Navn, By, Land, Mail, B2B Outreach, Produkt, Hvem?, Notat
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
-                <div>
-                  <label>Standardkategori (hvis ikke auto-detekteret)</label>
-                  <input className="inp" list="cat-list" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}} placeholder="Skriv eller vælg kategori..."/>
-                  <datalist id="cat-list">{categories.map(c=><option key={c} value={c}/>)}</datalist>
-                </div>
-                <div>
-                  <label>Standardland (hvis ikke i filen)</label>
-                  <input className="inp" list="country-list" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}} placeholder="Skriv eller vælg land..."/>
-                  <datalist id="country-list">{countries.map(c=><option key={c} value={c}/>)}</datalist>
-                </div>
-              </div>
+
               <div style={{marginBottom:12}}>
                 <label>Upload fil (CSV / TSV / TXT)</label>
                 <input type="file" accept=".csv,.tsv,.txt" ref={fileRef} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setIText(ev.target.result);setIPrev(runP(ev.target.result));};r.readAsText(f,'UTF-8');}} style={{display:'none'}}/>
@@ -887,6 +876,24 @@ export default function CRMApp() {
         {view==='settings'&&(
           <div style={{padding:28,maxWidth:600}}>
             <h2 style={{fontWeight:700,marginBottom:20}}>Indstillinger</h2>
+            <div style={{...CC.card,padding:22,marginBottom:16,borderColor:'#ef444430'}}>
+              <div className="sl" style={{color:'#ef4444'}}>Farezone</div>
+              <div style={{display:'flex',gap:12,alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,marginBottom:2}}>Slet alle leads</div>
+                  <div style={{fontSize:12,color:'#6b7280'}}>Fjerner samtlige leads og outreach fra databasen. Kan ikke fortrydes.</div>
+                </div>
+                <button className="btn btn-d" style={{padding:'8px 16px',whiteSpace:'nowrap'}} onClick={async()=>{
+                  if(!confirm('Er du SIKKER? Dette sletter alle '+leads.length+' leads permanent!')) return;
+                  if(!confirm('Sidste chance — slet alle leads?')) return;
+                  try {
+                    await supabase.from('outreaches').delete().neq('id','00000000-0000-0000-0000-000000000000');
+                    await supabase.from('leads').delete().neq('id','00000000-0000-0000-0000-000000000000');
+                    setLeads([]); setCategories([]); msg('Alle leads slettet');
+                  } catch(e){ msg('Fejl: '+e.message,'err'); }
+                }}>Slet alle leads</button>
+              </div>
+            </div>
             <div style={{...CC.card,padding:22,marginBottom:16}}>
               <div className="sl">Kategorier</div>
               <div style={{fontSize:12,color:'#6b7280',marginBottom:14}}>Slet kategorier du ikke bruger. Leads i den kategori flyttes til "Andet".</div>
