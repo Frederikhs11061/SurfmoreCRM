@@ -327,12 +327,15 @@ export default function CRMApp() {
 
   const runP = txt => {
     const rows = parseCSVFull(txt.trim());
-    const newCountries = [...countries];
+    const dynCountries = [...countries];
+    const dynCats = [...categories];
     const parsed = rows.map(row => {
-      const result = parseLine(row, iCat, iCountry, newCountries);
-      if(result && result._newCountry && !newCountries.includes(result._newCountry)) {
-        newCountries.push(result._newCountry);
-      }
+      const result = parseLine(row, iCat, iCountry, dynCountries);
+      if(!result) return null;
+      // Collect new countries
+      if(result.country && !dynCountries.includes(result.country)) dynCountries.push(result.country);
+      // Collect new categories (from type mapping)
+      if(result.category && !dynCats.includes(result.category)) dynCats.push(result.category);
       return result;
     }).filter(Boolean);
     return parsed;
@@ -475,6 +478,15 @@ export default function CRMApp() {
         }
       }
       await loadLeads();
+      // Add any new categories or countries discovered during import
+      const newCats = [...categories];
+      const newCtries = [...countries];
+      for(const lead of iPrev) {
+        if(lead.category && !newCats.includes(lead.category)) newCats.push(lead.category);
+        if(lead.country && !newCtries.includes(lead.country)) newCtries.push(lead.country);
+      }
+      if(newCats.length !== categories.length) setCategories(newCats);
+      if(newCtries.length !== countries.length) setCountries(newCtries);
       setIText(''); setIPrev([]); setView('list');
       msg(iPrev.length+' leads importeret');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
