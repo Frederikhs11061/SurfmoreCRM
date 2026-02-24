@@ -25,8 +25,19 @@ const DEFAULT_LEAD = {
 const DEFAULT_OTR = { date:'',by:'Jeppe',note:'',sale_info:'' };
 
 // ─── CSV Parsing helpers ─────────────────────────────────────────────────────
-function parseCSVFull(text) {
-  // Full CSV parser that handles quoted fields with newlines
+
+// Detects whether the file uses ; or , as separator by counting occurrences in the first lines
+function detectSeparator(txt) {
+  const lines = txt.split('\n').filter(l => l.trim()).slice(0, 5);
+  let semi = 0, comma = 0;
+  for (const l of lines) {
+    semi  += (l.match(/;/g)  || []).length;
+    comma += (l.match(/,/g)  || []).length;
+  }
+  return semi > comma ? ';' : ',';
+}
+
+function parseCSVFull(text, sep=',') {
   const rows = []; let row = [], cell = '', inQ = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -35,7 +46,7 @@ function parseCSVFull(text) {
       else if (ch === '"') inQ = false;
       else cell += ch;
     } else if (ch === '"') inQ = true;
-    else if (ch === ',') { row.push(cell.trim()); cell = ''; }
+    else if (ch === sep) { row.push(cell.trim()); cell = ''; }
     else if (ch === '\n') { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
     else if (ch !== '\r') cell += ch;
   }
@@ -371,16 +382,8 @@ export default function CRMApp() {
 
   const runP = txt => {
     if(!txt.trim()) return [];
-    // Hvis filen er semikolon-separeret (;) og næsten ingen kommaer,
-    // konverterer vi til komma-separeret før parsing.
-    let source = txt;
-    const hasSemicolon = txt.includes(';');
-    const hasComma = txt.includes(',');
-    if(hasSemicolon && !hasComma){
-      source = txt.replace(/;/g, ',');
-    }
-
-    const rows = parseCSVFull(source.trim());
+    const sep = detectSeparator(txt);
+    const rows = parseCSVFull(txt.trim(), sep);
     const headerIdx = rows.findIndex(r => isHeader(r));
     const colMap = headerIdx >= 0 ? buildColMap(rows[headerIdx]) : {};
     const useHeaderFormat = headerIdx >= 0 && (colMap.navn != null || colMap.mail != null);
@@ -508,6 +511,21 @@ export default function CRMApp() {
       }
       await loadLeads();
       msg(bulkSel.size+' leads opdateret');
+      setBulkSel(new Set()); setBulk(false);
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
+  };
+
+  const bulkDelete = async () => {
+    if(bulkSel.size===0) return msg('Vælg leads','err');
+    if(!confirm(`Slet ${bulkSel.size} leads permanent? Dette kan ikke fortrydes.`)) return;
+    setSaving(true);
+    try {
+      const ids=[...bulkSel];
+      const {error} = await supabase.from('leads').delete().in('id',ids);
+      if(error) throw error;
+      setLeads(leads.filter(l=>!bulkSel.has(l.id)));
+      msg(ids.length+' leads slettet');
       setBulkSel(new Set()); setBulk(false);
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
@@ -904,6 +922,7 @@ export default function CRMApp() {
                   <div><label>Af</label><input className="inp" style={{width:90}} value={bulkBy} onChange={e=>setBulkBy(e.target.value)}/></div>
                   <div><label>Note</label><input className="inp" style={{width:160}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
+                  <button className="btn btn-d" style={{padding:'8px 16px',alignSelf:'flex-end',fontSize:13}} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
                 </div>
               </div>
             )}
