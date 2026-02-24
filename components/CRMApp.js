@@ -112,14 +112,14 @@ function parseLine(line, cat, country, allCountries) {
 
   const countries = allCountries || ['Danmark','Sverige','Norge'];
 
-  // ── Detect fixed-column format (from standardized Excel):
-  // Navn(0) | Kategori(1) | Underkategori(2) | Land(3) | Mail(4) | Telefon(5) | By(6) | Otr1(7) | Otr2(8) | Otr3(9) | Salg(10)
-  const isFixedFormat = p.length >= 5 && 
-    (isEmail(p[4]) || !p[4] || p[4].trim() === '') &&
-    (p[1] && p[1].trim() && !isEmail(p[1])) &&
-    (p[3] && ['Danmark','Norge','Sverige'].some(c => p[3].toLowerCase().startsWith(c.toLowerCase())) || !p[3] || p[3].trim() === '');
+  // Fixed-column format: Navn|Kategori|Underkategori|Land|Mail|Telefon|By|Otr1|Otr2|Otr3|Salg
+  const knownCountries = ['danmark','norge','sverige','finland','holland','tyskland','uk','usa','frankrig','spanien','polen'];
+  const col3isCountry = !p[3] || !p[3].trim() || knownCountries.some(c => (p[3]||'').toLowerCase().startsWith(c));
+  const col4isEmailOrEmpty = !p[4] || !p[4].trim() || isEmail(p[4]);
+  const col1notEmail = !!(p[1] && !isEmail(p[1]) && !p[1].startsWith('http'));
+  const isFixedFormat = p.length >= 4 && col1notEmail && col3isCountry && col4isEmailOrEmpty;
 
-  let name, category, subcategory, land, mail, phone, city, outreaches=[], saleField='';
+    let name, category, subcategory, land, mail, phone, city, outreaches=[], saleField='';
 
   if(isFixedFormat) {
     name = p[0].trim();
