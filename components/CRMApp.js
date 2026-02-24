@@ -11,11 +11,8 @@ const CATEGORIES = [
 const COUNTRIES = ['Danmark','Norge','Sverige'];
 const STATUS_OPTIONS = [
   { value:'not_contacted', label:'Ikke kontaktet', color:'#64748b' },
-  { value:'outreach_done', label:'Outreach sendt',  color:'#f59e0b' },
-  { value:'in_dialogue',   label:'I dialog',        color:'#3b82f6' },
+  { value:'outreach_done', label:'Outreach sendt',  color:'#3b82f6' },
   { value:'won',           label:'Solgt',            color:'#22c55e' },
-  { value:'lost',          label:'Tabt',             color:'#ef4444' },
-  { value:'not_relevant',  label:'Ikke relevant',    color:'#6b7280' },
 ];
 const DEFAULT_LEAD = {
   name:'',category:'Butik & Webshop',country:'Danmark',
@@ -96,20 +93,19 @@ function buildCategoryDisplay(kategori, underkategori, defaultCat) {
 }
 
 // Build column index map from header row (case-insensitive)
+// All columns named "B2B Outreach" (with or without number) are collected in otrCols[]
 function buildColMap(headerRow) {
-  const map = {};
+  const map = { otrCols: [] };
   const lower = (headerRow || []).map(h => (h || '').toLowerCase().trim());
   lower.forEach((h, i) => {
     if (h.includes('navn') || h === 'name') map.navn = i;
-    else if (h.includes('kategori') && !h.includes('under')) map.kategori = i;
     else if (h.includes('underkategori') || h.includes('subcategory')) map.underkategori = i;
+    else if (h.includes('kategori')) map.kategori = i;
     else if (h.includes('land') || h === 'country') map.land = i;
     else if (h.includes('mail') || h === 'email') map.mail = i;
     else if (h.includes('telefon') || h === 'phone') map.telefon = i;
     else if (h === 'by' || h.includes('city')) map.by = i;
-    else if (/b2b\s*outreach\s*1|outreach\s*1/.test(h)) map.otr1 = i;
-    else if (/b2b\s*outreach\s*2|outreach\s*2/.test(h)) map.otr2 = i;
-    else if (/b2b\s*outreach\s*3|outreach\s*3/.test(h)) map.otr3 = i;
+    else if (h.includes('outreach')) map.otrCols.push(i);
     else if (h.includes('salg') || h.includes('udbytte') || h.includes('sale')) map.salg = i;
     else if (h.includes('kontaktperson') || h.includes('contact')) map.kontaktperson = i;
     else if (h.includes('produkt') || h === 'product') map.produkt = i;
@@ -119,7 +115,7 @@ function buildColMap(headerRow) {
 
 function getVal(p, colMap, key) { const i = colMap[key]; return i != null && p[i] !== undefined ? (p[i] || '').trim() : ''; }
 
-function parseLineWithMap(p, colMap, defaultCat, country) {
+function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
   const knownC = ['Danmark','Sverige','Norge'];
   const name = getVal(p, colMap, 'navn');
   const kategori = getVal(p, colMap, 'kategori');
@@ -130,30 +126,27 @@ function parseLineWithMap(p, colMap, defaultCat, country) {
   const city = getVal(p, colMap, 'by');
   const kontaktperson = getVal(p, colMap, 'kontaktperson');
   const produkt = getVal(p, colMap, 'produkt');
-
-  const otr1 = getVal(p, colMap, 'otr1');
-  const otr2 = getVal(p, colMap, 'otr2');
-  const otr3 = getVal(p, colMap, 'otr3');
   const salgRaw = getVal(p, colMap, 'salg');
 
-  const otrFields = [otr1, otr2, otr3].filter(x => x && !isSaleField(x));
-  const saleFromOtr = [otr1, otr2, otr3].find(x => isSaleField(x));
+  // Collect ALL outreach column values (handles any number of B2B Outreach columns)
+  const otrVals = (colMap.otrCols || []).map(i => (p[i] || '').trim()).filter(Boolean);
+
+  const otrFields = otrVals.filter(x => !isSaleField(x));
+  const saleFromOtr = otrVals.find(x => isSaleField(x));
+  // salgRaw: any non-empty Salg/Udbytte column value counts as a sale
   const saleField = saleFromOtr || salgRaw;
 
   const outreaches = [];
   for (const f of otrFields) { outreaches.push(...parseOtrField(f, false)); }
   if (saleField && isSaleField(saleField)) { outreaches.push(...parseOtrField(saleField, true)); }
 
-  const hasSale = !!saleField;
-  const has15pct = [otr1, otr2, otr3, salgRaw].some(x => x && x.includes('15%'));
   let status = 'not_contacted';
-  if (hasSale) status = 'won';
-  else if (has15pct) status = 'in_dialogue';
+  if (saleField) status = 'won';
   else if (outreaches.length > 0) status = 'outreach_done';
 
-  const sale_info = saleField || (has15pct ? '15% medlemsrabat aftalt' : '');
+  const sale_info = saleField;
   const category = buildCategoryDisplay(kategori, underkategori, defaultCat);
-  const ctry = knownC.find(c => land.toLowerCase().startsWith(c.toLowerCase())) || country;
+  const ctry = knownC.find(c => land.toLowerCase().startsWith(c.toLowerCase())) || defaultCountry || '';
 
   if (!name && !email) return null;
   return {
@@ -189,7 +182,7 @@ function parseLineLegacy(line, cat, country) {
     const has15pct = [p[4],p[5],p[6],p[7]].some(x => x && x.includes('15%'));
     let status = 'not_contacted';
     if (hasSale) status = 'won';
-    else if (has15pct) status = 'in_dialogue';
+    else if (has15pct) status = 'outreach_done';
     else if (outreaches.length > 0) status = 'outreach_done';
 
     const sale_info = saleField || (has15pct ? '15% medlemsrabat aftalt' : '');
@@ -301,16 +294,15 @@ export default function CRMApp() {
   const [sel, setSel] = useState(null);
   const [editLead, setEditLead] = useState(null);
   const [search, setSearch] = useState('');
-  const [fCat, setFCat] = useState('Alle');
+  const [fCats, setFCats] = useState(new Set());
   const [fStatus, setFStatus] = useState('Alle');
   const [fCountry, setFCountry] = useState('Alle');
+  const [catOpen, setCatOpen] = useState(false);
   const [newOtr, setNewOtr] = useState({...DEFAULT_OTR});
   const [editOtrId, setEditOtrId] = useState(null);
   const [editOtr, setEditOtr] = useState(null);
   const [iText, setIText] = useState('');
   const [iPrev, setIPrev] = useState([]);
-  const [iCat, setICat] = useState('Butik & Webshop');
-  const [iCountry, setICountry] = useState('Danmark');
   const [bulk, setBulk] = useState(false);
   const [bulkSel, setBulkSel] = useState(new Set());
   const [bulkSt, setBulkSt] = useState('outreach_done');
@@ -376,7 +368,7 @@ export default function CRMApp() {
   const stats={
     total:leads.length,
     won:leads.filter(l=>l.status==='won').length,
-    out:leads.filter(l=>l.status==='outreach_done'||l.status==='in_dialogue').length,
+    out:leads.filter(l=>l.status==='outreach_done').length,
     nc:leads.filter(l=>l.status==='not_contacted').length,
   };
 
@@ -385,16 +377,19 @@ export default function CRMApp() {
     const sep = detectSeparator(txt);
     const rows = parseCSVFull(txt.trim(), sep);
     const headerIdx = rows.findIndex(r => isHeader(r));
-    const colMap = headerIdx >= 0 ? buildColMap(rows[headerIdx]) : {};
+    const colMap = headerIdx >= 0 ? buildColMap(rows[headerIdx]) : { otrCols: [] };
     const useHeaderFormat = headerIdx >= 0 && (colMap.navn != null || colMap.mail != null);
     const dataRows = headerIdx >= 0 ? rows.filter((_, i) => i !== headerIdx) : rows;
     return dataRows.map(row =>
-      useHeaderFormat ? parseLineWithMap(row, colMap, iCat, iCountry) : parseLineLegacy(row, iCat, iCountry)
+      useHeaderFormat ? parseLineWithMap(row, colMap, '', '') : parseLineLegacy(row, '', '')
     ).filter(Boolean);
   };
 
+  // Dynamic unique categories from loaded leads (sorted)
+  const allCats = [...new Set(leads.map(l => l.category).filter(Boolean))].sort();
+
   const filtered = leads.filter(l=>{
-    if(fCat!=='Alle'&&l.category!==fCat)return false;
+    if(fCats.size > 0 && !fCats.has(l.category)) return false;
     if(fStatus!=='Alle'&&l.status!==fStatus)return false;
     if(fCountry!=='Alle'&&l.country!==fCountry)return false;
     if(search){const q=search.toLowerCase();if(!l.name.toLowerCase().includes(q)&&!(l.email||'').toLowerCase().includes(q))return false;}
@@ -652,7 +647,7 @@ export default function CRMApp() {
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
-              {[{l:'Totale leads',v:stats.total,c:'#6366f1'},{l:'Ikke kontaktet',v:stats.nc,c:'#6b7280'},{l:'I gang',v:stats.out,c:'#f59e0b'},{l:'Solgt',v:stats.won,c:'#22c55e'}].map(s=>(
+              {[{l:'Totale leads',v:stats.total,c:'#6366f1'},{l:'Ikke kontaktet',v:stats.nc,c:'#64748b'},{l:'Outreach sendt',v:stats.out,c:'#3b82f6'},{l:'Solgt',v:stats.won,c:'#22c55e'}].map(s=>(
                 <div key={s.l} style={{...CC.card,padding:'18px 20px'}}>
                   <div style={{fontSize:10,color:s.c,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>{s.l}</div>
                   <div style={{fontSize:30,fontWeight:700,color:s.c}}>{s.v}</div>
@@ -693,12 +688,12 @@ export default function CRMApp() {
             <div style={{...CC.card,padding:20}}>
               <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                {CATEGORIES.map(cat=>{
+                {allCats.map(cat=>{
                   const cnt=leads.filter(l=>l.category===cat).length;
                   const wonC=leads.filter(l=>l.category===cat&&l.status==='won').length;
                   if(!cnt)return null;
                   return(
-                    <div key={cat} style={{...CC.inner,padding:'10px 14px',cursor:'pointer'}} onClick={()=>{setFCat(cat);setView('list');}}>
+                    <div key={cat} style={{...CC.inner,padding:'10px 14px',cursor:'pointer'}} onClick={()=>{setFCats(new Set([cat]));setView('list');}}>
                       <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{cat}</div>
                       <div style={{fontSize:11,color:'#4b5563'}}>{cnt} leads · <span style={{color:'#22c55e'}}>{wonC} solgt</span></div>
                     </div>
@@ -742,11 +737,7 @@ export default function CRMApp() {
             <h2 style={{fontWeight:700,marginBottom:20}}>Importér leads</h2>
             <div style={{...CC.card,padding:22}}>
               <div style={{background:'#080d18',border:'1px solid #1a2332',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#4b5563',fontFamily:'monospace'}}>
-                Format: Navn, Kategori, Underkategori, Land, Mail, Telefon, By, B2B Outreach 1/2/3, Salg/Udbytte · evt. Kontaktperson
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
-                <div><label>Standardkategori</label><select className="inp" value={iCat} onChange={e=>{setICat(e.target.value);setIPrev(runP(iText));}}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
-                <div><label>Standardland</label><select className="inp" value={iCountry} onChange={e=>{setICountry(e.target.value);setIPrev(runP(iText));}}>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                Format: Navn · Kategori · Underkategori · Land · Mail · Telefon · By · B2B Outreach (gentages pr. outreach) · Salg/Udbytte · evt. Kontaktperson
               </div>
               <div style={{marginBottom:12}}>
                 <label>Upload fil (CSV / TSV / TXT)</label>
@@ -801,7 +792,7 @@ export default function CRMApp() {
                 {[['Navn *','name','text'],['Email','email','email'],['Telefon','phone','text'],['By','city','text']].map(([lb,k,t])=>(
                   <div key={k}><label>{lb}</label><input className="inp" type={t} value={editLead[k]||''} onChange={e=>setEditLead({...editLead,[k]:e.target.value})}/></div>
                 ))}
-                <div><label>Kategori</label><select className="inp" value={editLead.category} onChange={e=>setEditLead({...editLead,category:e.target.value})}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Kategori</label><input className="inp" value={editLead.category||''} onChange={e=>setEditLead({...editLead,category:e.target.value})} list="cat-list"/><datalist id="cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist></div>
                 <div><label>Land</label><select className="inp" value={editLead.country} onChange={e=>setEditLead({...editLead,country:e.target.value})}>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select></div>
                 <div><label>Status</label><select className="inp" value={editLead.status} onChange={e=>setEditLead({...editLead,status:e.target.value})}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                 <div><label>Kontaktperson</label><input className="inp" value={editLead.contact_person||''} onChange={e=>setEditLead({...editLead,contact_person:e.target.value})}/></div>
@@ -929,7 +920,33 @@ export default function CRMApp() {
 
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <input className="inp" style={{maxWidth:200}} placeholder="Søg..." value={search} onChange={e=>setSearch(e.target.value)}/>
-              <select className="inp" style={{maxWidth:190}} value={fCat} onChange={e=>setFCat(e.target.value)}><option>Alle</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select>
+
+              {/* Multi-select kategori dropdown */}
+              <div style={{position:'relative'}}>
+                <button className="btn btn-g" style={{whiteSpace:'nowrap',minWidth:160,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}
+                  onClick={()=>setCatOpen(o=>!o)}>
+                  <span>{fCats.size===0?'Alle kategorier':`${fCats.size} valgt`}</span>
+                  <span style={{fontSize:10}}>▼</span>
+                </button>
+                {catOpen&&(
+                  <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#111827',border:'1px solid #1f2937',borderRadius:10,minWidth:220,maxHeight:320,overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',padding:'6px 0'}}>
+                    <div style={{padding:'6px 12px',borderBottom:'1px solid #1f2937',display:'flex',gap:8}}>
+                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set())}>Ryd</button>
+                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set(allCats))}>Alle</button>
+                    </div>
+                    {allCats.map(c=>(
+                      <div key={c} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px',cursor:'pointer',background:fCats.has(c)?'#0ea5e915':'transparent'}}
+                        onClick={()=>{const n=new Set(fCats);n.has(c)?n.delete(c):n.add(c);setFCats(n);}}>
+                        <div style={{width:14,height:14,borderRadius:3,border:'1px solid '+(fCats.has(c)?'#0ea5e9':'#374151'),background:fCats.has(c)?'#0ea5e9':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                          {fCats.has(c)&&<span style={{color:'#fff',fontSize:10,lineHeight:1}}>✓</span>}
+                        </div>
+                        <span style={{fontSize:12,color:fCats.has(c)?'#e2e8f0':'#9ca3af'}}>{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <select className="inp" style={{maxWidth:155}} value={fStatus} onChange={e=>setFStatus(e.target.value)}><option value="Alle">Alle statusser</option>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>
               <select className="inp" style={{maxWidth:120}} value={fCountry} onChange={e=>setFCountry(e.target.value)}><option value="Alle">Alle lande</option>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
               <span style={{fontSize:13,color:'#4b5563',marginLeft:'auto'}}>{filtered.length} leads</span>
