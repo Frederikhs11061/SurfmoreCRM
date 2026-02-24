@@ -165,7 +165,8 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
 
   const sale_info = saleField;
   const category = buildCategoryDisplay(kategori, underkategori, defaultCat);
-  const ctry = knownC.find(c => land.toLowerCase().startsWith(c.toLowerCase())) || defaultCountry || '';
+  // Normalize known country names to proper case; otherwise use the raw value from the sheet
+  const ctry = knownC.find(c => land.toLowerCase() === c.toLowerCase()) || land || defaultCountry || '';
 
   if (!name && !email) return null;
   return {
