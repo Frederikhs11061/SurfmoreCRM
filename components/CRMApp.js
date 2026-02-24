@@ -100,6 +100,14 @@ function mapCategory(type, defaultCat) {
   return defaultCat;
 }
 
+// Format ISO date "2025-09-23" → "23/09/2025" for display
+function fmtDate(s) {
+  if (!s) return '';
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return s; // return as-is if not ISO format
+}
+
 // Underkategori: hvis underkategori findes → "Kategori (Underkategori)", ellers kun "Kategori"
 function buildCategoryDisplay(kategori, underkategori, defaultCat) {
   const cat = (kategori || '').trim() || defaultCat;
@@ -323,6 +331,7 @@ export default function CRMApp() {
   const [bulkDate, setBulkDate] = useState('');
   const [bulkBy, setBulkBy] = useState('Jeppe');
   const [bulkNote, setBulkNote] = useState('');
+  const [bulkSale, setBulkSale] = useState('');
   const [shopDomain, setShopDomain] = useState('');
   const [shopToken, setShopToken] = useState('');
   const [shopOrders, setShopOrders] = useState([]);
@@ -536,14 +545,21 @@ export default function CRMApp() {
     setSaving(true);
     try {
       const ids=[...bulkSel];
-      await supabase.from('leads').update({status:bulkSt}).in('id',ids);
+      // If sale is filled, force status to 'won'
+      const effectiveStatus = bulkSale.trim() ? 'won' : bulkSt;
+      const updatePayload = {status:effectiveStatus};
+      if(bulkSale.trim()) updatePayload.sale_info = bulkSale.trim();
+      const CHUNK=50;
+      for(let i=0;i<ids.length;i+=CHUNK){
+        await supabase.from('leads').update(updatePayload).in('id',ids.slice(i,i+CHUNK));
+      }
       if(bulkDate){
-        const rows=ids.map(id=>({lead_id:id,date:bulkDate,by:bulkBy,note:bulkNote,sale_info:''}));
+        const rows=ids.map(id=>({lead_id:id,date:bulkDate,by:bulkBy,note:bulkNote,sale_info:bulkSale.trim()||''}));
         await supabase.from('outreaches').insert(rows);
       }
       await loadLeads();
       msg(bulkSel.size+' leads opdateret');
-      setBulkSel(new Set()); setBulk(false);
+      setBulkSel(new Set()); setBulk(false); setBulkSale('');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
   };
@@ -720,12 +736,22 @@ export default function CRMApp() {
           ];
           const maxPipe = Math.max(...pipelineStages.map(s=>s.count),1);
 
-          // Recent activity: last 8 outreaches across all leads
-          const recentActivity = leads
-            .flatMap(l=>(l.outreaches||[]).map(o=>({...o,leadName:l.name,leadId:l.id,leadCat:l.category})))
+          // Recent activity: batch imports (grouped by created_at date) + recent outreaches
+          const importBatches = (() => {
+            const groups = {};
+            for(const l of leads){
+              const d=(l.created_at||'').slice(0,10);
+              if(!d) continue;
+              if(!groups[d]) groups[d]={date:d,count:0};
+              groups[d].count++;
+            }
+            return Object.values(groups).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
+          })();
+          const recentOutreaches = leads
+            .flatMap(l=>(l.outreaches||[]).map(o=>({...o,leadName:l.name,leadId:l.id})))
             .filter(o=>o.date)
             .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
-            .slice(0,8);
+            .slice(0,5);
 
           // Follow-up: leads with outreach_done but oldest last outreach
           const needFollowUp = leads
@@ -806,23 +832,41 @@ export default function CRMApp() {
               </div>
 
               {/* Recent activity */}
-              <div style={{...CC.card,padding:20}}>
+              <div style={{...CC.card,padding:20,display:'flex',flexDirection:'column',gap:0}}>
                 <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Seneste aktivitet</div>
-                {recentActivity.length===0&&<div style={{color:'#4b5563',fontSize:13}}>Ingen outreach-aktivitet endnu</div>}
-                <div style={{display:'flex',flexDirection:'column',gap:0}}>
-                  {recentActivity.map((o,i)=>(
-                    <div key={o.id||i} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 0',borderBottom:i<recentActivity.length-1?'1px solid #0d1420':'none',cursor:'pointer'}}
-                      onClick={()=>{const l=leads.find(x=>x.id===o.leadId);if(l){setSel(l);setView('detail');}}}>
-                      <div style={{width:7,height:7,borderRadius:'50%',background:'#3b82f6',marginTop:5,flexShrink:0}}/>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.leadName}</div>
-                        <div style={{fontSize:11,color:'#4b5563',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.note||'Outreach sendt'}</div>
+
+                {/* Batch imports */}
+                {importBatches.length>0&&(
+                  <div style={{marginBottom:14}}>
+                    <div style={{fontSize:10,color:'#4b5563',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Imports</div>
+                    {importBatches.map((b,i)=>(
+                      <div key={b.date} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 0',borderBottom:i<importBatches.length-1?'1px solid #0d1420':'none'}}>
+                        <div style={{width:7,height:7,borderRadius:'50%',background:'#6366f1',flexShrink:0}}/>
+                        <div style={{flex:1,fontSize:12,fontWeight:600}}>{b.count} leads tilføjet</div>
+                        <div style={{fontSize:11,color:'#4b5563',flexShrink:0}}>{fmtDate(b.date)}</div>
                       </div>
-                      <div style={{fontSize:11,color:'#4b5563',flexShrink:0}}>{o.date}</div>
-                    </div>
-                  ))}
-                </div>
-                {recentActivity.length>0&&<button className="btn btn-g" style={{fontSize:11,marginTop:10,width:'100%'}} onClick={()=>setView('list')}>Se alle leads →</button>}
+                    ))}
+                  </div>
+                )}
+
+                {/* Recent outreaches */}
+                {recentOutreaches.length>0&&(
+                  <div>
+                    <div style={{fontSize:10,color:'#4b5563',textTransform:'uppercase',letterSpacing:0.5,marginBottom:8}}>Seneste outreaches</div>
+                    {recentOutreaches.map((o,i)=>(
+                      <div key={o.id||i} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'6px 0',borderBottom:i<recentOutreaches.length-1?'1px solid #0d1420':'none',cursor:'pointer'}}
+                        onClick={()=>{const l=leads.find(x=>x.id===o.leadId);if(l){setSel(l);setView('detail');}}}>
+                        <div style={{width:7,height:7,borderRadius:'50%',background:'#3b82f6',marginTop:4,flexShrink:0}}/>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.leadName}</div>
+                          <div style={{fontSize:11,color:'#4b5563',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.note||'Outreach sendt'}</div>
+                        </div>
+                        <div style={{fontSize:11,color:'#4b5563',flexShrink:0}}>{fmtDate(o.date)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {importBatches.length===0&&recentOutreaches.length===0&&<div style={{color:'#4b5563',fontSize:13}}>Ingen aktivitet endnu</div>}
               </div>
             </div>
 
@@ -843,7 +887,7 @@ export default function CRMApp() {
                       <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.name}</div>
                       <div style={{fontSize:11,color:'#4b5563'}}>{l.category}</div>
                     </div>
-                    <div style={{fontSize:11,color:l.lastOtrDate?'#f59e0b':'#ef4444',flexShrink:0}}>{l.lastOtrDate||'Ingen dato'}</div>
+                    <div style={{fontSize:11,color:l.lastOtrDate?'#f59e0b':'#ef4444',flexShrink:0}}>{l.lastOtrDate?fmtDate(l.lastOtrDate):'Ingen dato'}</div>
                   </div>
                 ))}
                 {needFollowUp.length>0&&<button className="btn btn-g" style={{fontSize:11,marginTop:10,width:'100%'}} onClick={()=>{setFStatus('outreach_done');setView('list');}}>Se alle outreach leads →</button>}
@@ -1152,7 +1196,7 @@ export default function CRMApp() {
                       <div style={{flex:1}}>
                         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
                           <span style={{fontSize:13,fontWeight:600}}>{o.by}</span>
-                          <span style={{fontSize:12,color:'#4b5563'}}>· {o.date}</span>
+                          <span style={{fontSize:12,color:'#4b5563'}}>· {fmtDate(o.date)}</span>
                           {o.sale_info&&<span style={{fontSize:11,color:'#4ade80',background:'#14532d15',border:'1px solid #14532d30',borderRadius:4,padding:'1px 6px'}}>Salg</span>}
                         </div>
                         {o.note&&<div style={{fontSize:12,color:'#6b7280'}}>{o.note}</div>}
@@ -1202,10 +1246,11 @@ export default function CRMApp() {
                   </div>
                 </div>
                 <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end',flex:1}}>
-                  <div><label>Sæt status</label><select className="inp" style={{width:150}} value={bulkSt} onChange={e=>setBulkSt(e.target.value)}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
+                  <div><label>Sæt status</label><select className="inp" style={{width:150}} value={bulkSale.trim()?'won':bulkSt} onChange={e=>setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                   <div><label>Outreach dato</label><input className="inp" type="date" style={{width:140}} value={bulkDate} onChange={e=>setBulkDate(e.target.value)}/></div>
                   <div><label>Af</label><input className="inp" style={{width:90}} value={bulkBy} onChange={e=>setBulkBy(e.target.value)}/></div>
                   <div><label>Note</label><input className="inp" style={{width:160}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
+                  <div><label>Salg <span style={{color:'#22c55e',fontSize:10}}>(sætter automatisk → Solgt)</span></label><input className="inp" style={{width:180}} value={bulkSale} onChange={e=>setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
                   <button className="btn btn-d" style={{padding:'8px 16px',alignSelf:'flex-end',fontSize:13}} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
                 </div>
@@ -1297,7 +1342,7 @@ export default function CRMApp() {
                       <td style={{padding:'10px 14px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email?<span style={{color:'#4b5563'}}>{lead.email}</span>:<span style={{color:'#ef4444',fontSize:11,fontWeight:600}}>+ Tilføj email</span>}</td>
                       <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.city||'—'}</td>
                       <td style={{padding:'10px 14px'}}><StatusBadge value={lead.status}/></td>
-                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12,lineHeight:1.6}}>{lead.outreaches.length}x{lead.outreaches.map(o=>o.date).filter(Boolean).map(d=><span key={d} style={{display:'block',fontSize:11,color:'#4b5563'}}>{d}</span>)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
+                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12,lineHeight:1.6}}>{lead.outreaches.length}x{lead.outreaches.map(o=>o.date).filter(Boolean).map(d=><span key={d} style={{display:'block',fontSize:11,color:'#4b5563'}}>{fmtDate(d)}</span>)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                       <td style={{padding:'10px 14px'}}>{lead.sale_info?<span style={{color:'#4ade80',fontSize:12,fontWeight:600}}>{lead.sale_info.slice(0,32)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                     </tr>
                   ))}
