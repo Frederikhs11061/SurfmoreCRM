@@ -356,11 +356,18 @@ export default function CRMApp() {
         .order('created_at', { ascending: false });
       if (leadsError) throw leadsError;
 
-      const { data: outreachData, error: oError } = await supabase
-        .from('outreaches')
-        .select('*')
-        .order('date', { ascending: true });
-      if (oError) throw oError;
+      // Fetch ALL outreaches in batches of 1000 (Supabase default limit)
+      let outreachData = [];
+      let oFrom = 0;
+      const OBatch = 1000;
+      while(true){
+        const { data: oBatch, error: oError } = await supabase
+          .from('outreaches').select('*').order('date',{ascending:true}).range(oFrom, oFrom+OBatch-1);
+        if(oError) throw oError;
+        outreachData = outreachData.concat(oBatch||[]);
+        if((oBatch||[]).length < OBatch) break;
+        oFrom += OBatch;
+      }
 
       // Merge outreaches into leads
       const oByLead = {};
@@ -623,19 +630,21 @@ export default function CRMApp() {
     if(!iPrev.length) return;
     setSaving(true);
     try {
+      let skipped = 0;
       for(const lead of iPrev){
         const {_outreaches,...leadData} = lead;
         const {data,error} = await supabase.from('leads').insert(leadData).select().single();
-        if(error) throw error;
+        if(error){ console.warn('Lead insert fejl:', leadData.name, error.message); skipped++; continue; }
         if(_outreaches&&_outreaches.length>0){
           const rows=_outreaches.map(o=>({lead_id:data.id,by:o.by||'Jeppe',note:o.note||'',date:o.date||null,sale_info:o.sale_info||''}));
           const {error:oErr} = await supabase.from('outreaches').insert(rows);
           if(oErr) console.warn('Outreach insert fejl for', data.id, oErr.message);
         }
       }
+      if(skipped>0) msg(`${iPrev.length-skipped} leads importeret (${skipped} sprunget over)`,'ok');
+      else msg(iPrev.length+' leads importeret');
       await loadLeads();
       setIText(''); setIPrev([]); setView('list');
-      msg(iPrev.length+' leads importeret');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
   };
@@ -1184,7 +1193,7 @@ export default function CRMApp() {
                         <div><label>Dato</label><input className="inp" type="date" value={editOtr.date} onChange={e=>setEditOtr({...editOtr,date:e.target.value})}/></div>
                         <div><label>Af</label><input className="inp" value={editOtr.by} onChange={e=>setEditOtr({...editOtr,by:e.target.value})}/></div>
                       </div>
-                      <div style={{marginBottom:8}}><label>Note</label><input className="inp" value={editOtr.note||''} onChange={e=>setEditOtr({...editOtr,note:e.target.value})}/></div>
+                      <div style={{marginBottom:8}}><label>Outreach besked</label><input className="inp" value={editOtr.note||''} onChange={e=>setEditOtr({...editOtr,note:e.target.value})}/></div>
                       <div style={{marginBottom:10}}><label>Salg</label><input className="inp" value={editOtr.sale_info||''} onChange={e=>setEditOtr({...editOtr,sale_info:e.target.value})} placeholder="f.eks. Solgt 15 stk"/></div>
                       <div style={{display:'flex',gap:8}}>
                         <button className="btn btn-p" style={{padding:'6px 14px',fontSize:12}} onClick={()=>saveEditOtr(sel)}>Gem</button>
@@ -1216,7 +1225,7 @@ export default function CRMApp() {
                   <div><label>Dato *</label><input className="inp" type="date" value={newOtr.date} onChange={e=>setNewOtr({...newOtr,date:e.target.value})}/></div>
                   <div><label>Af</label><input className="inp" value={newOtr.by} onChange={e=>setNewOtr({...newOtr,by:e.target.value})}/></div>
                 </div>
-                <div style={{marginBottom:8}}><label>Note / beskrivelse</label><input className="inp" value={newOtr.note} onChange={e=>setNewOtr({...newOtr,note:e.target.value})} placeholder="f.eks. Email sendt med katalog"/></div>
+                <div style={{marginBottom:8}}><label>Outreach besked</label><input className="inp" value={newOtr.note} onChange={e=>setNewOtr({...newOtr,note:e.target.value})} placeholder="f.eks. Email sendt med katalog"/></div>
                 <div style={{marginBottom:12}}><label>Salg (sætter status til Solgt automatisk)</label><input className="inp" value={newOtr.sale_info} onChange={e=>setNewOtr({...newOtr,sale_info:e.target.value})} placeholder="f.eks. Solgt 20 stk vandkikkerter" style={{borderColor:newOtr.sale_info?'#22c55e55':''}}/></div>
                 <button className="btn btn-p" onClick={()=>addOtr(sel)}>Tilføj outreach</button>
               </div>
@@ -1249,7 +1258,7 @@ export default function CRMApp() {
                   <div><label>Sæt status</label><select className="inp" style={{width:150}} value={bulkSale.trim()?'won':bulkSt} onChange={e=>setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                   <div><label>Outreach dato</label><input className="inp" type="date" style={{width:140}} value={bulkDate} onChange={e=>setBulkDate(e.target.value)}/></div>
                   <div><label>Af</label><input className="inp" style={{width:90}} value={bulkBy} onChange={e=>setBulkBy(e.target.value)}/></div>
-                  <div><label>Note</label><input className="inp" style={{width:160}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
+                  <div><label>Outreach besked</label><input className="inp" style={{width:180}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
                   <div><label>Salg <span style={{color:'#22c55e',fontSize:10}}>(sætter automatisk → Solgt)</span></label><input className="inp" style={{width:180}} value={bulkSale} onChange={e=>setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
                   <button className="btn btn-d" style={{padding:'8px 16px',alignSelf:'flex-end',fontSize:13}} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
