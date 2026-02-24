@@ -370,7 +370,17 @@ export default function CRMApp() {
   };
 
   const runP = txt => {
-    const rows = parseCSVFull(txt.trim());
+    if(!txt.trim()) return [];
+    // Hvis filen er semikolon-separeret (;) og næsten ingen kommaer,
+    // konverterer vi til komma-separeret før parsing.
+    let source = txt;
+    const hasSemicolon = txt.includes(';');
+    const hasComma = txt.includes(',');
+    if(hasSemicolon && !hasComma){
+      source = txt.replace(/;/g, ',');
+    }
+
+    const rows = parseCSVFull(source.trim());
     const headerIdx = rows.findIndex(r => isHeader(r));
     const colMap = headerIdx >= 0 ? buildColMap(rows[headerIdx]) : {};
     const useHeaderFormat = headerIdx >= 0 && (colMap.navn != null || colMap.mail != null);
