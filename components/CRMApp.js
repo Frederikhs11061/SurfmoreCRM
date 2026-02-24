@@ -128,17 +128,13 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
   const produkt = getVal(p, colMap, 'produkt');
   const salgRaw = getVal(p, colMap, 'salg');
 
-  // Collect ALL outreach column values (handles any number of B2B Outreach columns)
+  // Only B2B Outreach columns create outreach entries — one per non-empty cell, no exceptions
   const otrVals = (colMap.otrCols || []).map(i => (p[i] || '').trim()).filter(Boolean);
-
-  const otrFields = otrVals.filter(x => !isSaleField(x));
-  const saleFromOtr = otrVals.find(x => isSaleField(x));
-  // salgRaw: any non-empty Salg/Udbytte column value counts as a sale
-  const saleField = saleFromOtr || salgRaw;
-
   const outreaches = [];
-  for (const f of otrFields) { outreaches.push(...parseOtrField(f, false)); }
-  if (saleField && isSaleField(saleField)) { outreaches.push(...parseOtrField(saleField, true)); }
+  for (const f of otrVals) { outreaches.push(...parseOtrField(f, false)); }
+
+  // Sale info: from Salg/Udbytte column; fallback to first otr value that looks like a sale
+  const saleField = salgRaw || otrVals.find(x => isSaleField(x)) || '';
 
   let status = 'not_contacted';
   if (saleField) status = 'won';
@@ -298,6 +294,7 @@ export default function CRMApp() {
   const [fStatus, setFStatus] = useState('Alle');
   const [fCountry, setFCountry] = useState('Alle');
   const [catOpen, setCatOpen] = useState(false);
+  const [catSearch, setCatSearch] = useState('');
   const [catHierOpen, setCatHierOpen] = useState(new Set());
   const [settingsRename, setSettingsRename] = useState({});
   const [newOtr, setNewOtr] = useState({...DEFAULT_OTR});
@@ -394,13 +391,20 @@ export default function CRMApp() {
   const allCountries = [...new Set(leads.map(l => l.country).filter(Boolean))].sort();
 
   // Build category hierarchy: { parentName, subs: [fullCatName] }
+  // If parent parsed as empty string, use the subcategory name as a standalone entry
   const catHierarchy = (() => {
     const parents = {};
     for (const cat of allCats) {
       const m = cat.match(/^(.+?)\s*\((.+)\)$/);
       const parent = m ? m[1].trim() : cat;
-      if (!parents[parent]) parents[parent] = { name: parent, subs: [] };
-      if (m) parents[parent].subs.push(cat);
+      if (!parent) {
+        // Empty parent → treat the sub as a standalone entry
+        const key = m ? m[2].trim() : cat;
+        if (!parents[key]) parents[key] = { name: key, subs: [] };
+      } else {
+        if (!parents[parent]) parents[parent] = { name: parent, subs: [] };
+        if (m) parents[parent].subs.push(cat);
+      }
     }
     return Object.values(parents).sort((a,b)=>a.name.localeCompare(b.name));
   })();
@@ -535,9 +539,14 @@ export default function CRMApp() {
     setSaving(true);
     try {
       const ids=[...bulkSel];
-      await supabase.from('outreaches').delete().in('lead_id', ids);
-      const {error} = await supabase.from('leads').delete().in('id', ids);
-      if(error) throw error;
+      // Batch in chunks of 50 to avoid PostgREST URL length limits
+      const CHUNK = 50;
+      for(let i=0;i<ids.length;i+=CHUNK){
+        const batch=ids.slice(i,i+CHUNK);
+        await supabase.from('outreaches').delete().in('lead_id',batch);
+        const {error}=await supabase.from('leads').delete().in('id',batch);
+        if(error) throw error;
+      }
       setLeads(leads.filter(l=>!bulkSel.has(l.id)));
       msg(ids.length+' leads slettet');
       setBulkSel(new Set()); setBulk(false);
@@ -1060,16 +1069,18 @@ export default function CRMApp() {
               {/* Hierarkisk kategori mega-menu */}
               <div style={{position:'relative'}}>
                 <button className="btn btn-g" style={{whiteSpace:'nowrap',minWidth:170,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}
-                  onClick={()=>setCatOpen(o=>!o)}>
+                  onClick={()=>{setCatOpen(o=>!o);setCatSearch('');}}>
                   <span>{fCats.size===0?'Alle kategorier':`${fCats.size} valgt`}</span>
                   <span style={{fontSize:10}}>{catOpen?'▲':'▼'}</span>
                 </button>
                 {catOpen&&(
-                  <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#111827',border:'1px solid #1f2937',borderRadius:10,minWidth:260,maxHeight:420,overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',padding:'6px 0'}}>
-                    <div style={{padding:'6px 12px',borderBottom:'1px solid #1f2937',display:'flex',gap:8}}>
-                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set())}>Ryd alle</button>
+                  <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#111827',border:'1px solid #1f2937',borderRadius:10,minWidth:280,maxHeight:440,display:'flex',flexDirection:'column',boxShadow:'0 8px 32px rgba(0,0,0,0.6)'}}>
+                    <div style={{padding:'8px 10px',borderBottom:'1px solid #1f2937',display:'flex',gap:6,flexShrink:0}}>
+                      <input className="inp" style={{flex:1,padding:'5px 9px',fontSize:12}} placeholder="Søg kategori..." value={catSearch} onChange={e=>setCatSearch(e.target.value)} autoFocus/>
+                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px',whiteSpace:'nowrap'}} onClick={()=>{setFCats(new Set());setCatSearch('');}}>Ryd</button>
                     </div>
-                    {catHierarchy.map(parent=>{
+                    <div style={{overflowY:'auto',padding:'4px 0'}}>
+                    {catHierarchy.filter(p=> !catSearch || p.name.toLowerCase().includes(catSearch.toLowerCase()) || p.subs.some(s=>s.toLowerCase().includes(catSearch.toLowerCase()))).map(parent=>{
                       const parentSelected = fCats.has(parent.name);
                       const subSel = parent.subs.filter(s=>fCats.has(s)).length;
                       const allSubSel = parent.subs.length>0 && parent.subs.every(s=>fCats.has(s));
@@ -1108,6 +1119,7 @@ export default function CRMApp() {
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 )}
               </div>
