@@ -298,6 +298,8 @@ export default function CRMApp() {
   const [fStatus, setFStatus] = useState('Alle');
   const [fCountry, setFCountry] = useState('Alle');
   const [catOpen, setCatOpen] = useState(false);
+  const [catHierOpen, setCatHierOpen] = useState(new Set());
+  const [settingsRename, setSettingsRename] = useState({});
   const [newOtr, setNewOtr] = useState({...DEFAULT_OTR});
   const [editOtrId, setEditOtrId] = useState(null);
   const [editOtr, setEditOtr] = useState(null);
@@ -388,6 +390,21 @@ export default function CRMApp() {
   // Dynamic unique categories from loaded leads (sorted)
   const allCats = [...new Set(leads.map(l => l.category).filter(Boolean))].sort();
 
+  // Dynamic unique countries from loaded leads
+  const allCountries = [...new Set(leads.map(l => l.country).filter(Boolean))].sort();
+
+  // Build category hierarchy: { parentName, subs: [fullCatName] }
+  const catHierarchy = (() => {
+    const parents = {};
+    for (const cat of allCats) {
+      const m = cat.match(/^(.+?)\s*\((.+)\)$/);
+      const parent = m ? m[1].trim() : cat;
+      if (!parents[parent]) parents[parent] = { name: parent, subs: [] };
+      if (m) parents[parent].subs.push(cat);
+    }
+    return Object.values(parents).sort((a,b)=>a.name.localeCompare(b.name));
+  })();
+
   const filtered = leads.filter(l=>{
     if(fCats.size > 0 && !fCats.has(l.category)) return false;
     if(fStatus!=='Alle'&&l.status!==fStatus)return false;
@@ -429,7 +446,8 @@ export default function CRMApp() {
   const delLead = async id => {
     if(!confirm('Slet dette lead?')) return;
     try {
-      const {error} = await supabase.from('leads').delete().eq('id',id);
+      await supabase.from('outreaches').delete().eq('lead_id', id);
+      const {error} = await supabase.from('leads').delete().eq('id', id);
       if(error) throw error;
       setLeads(leads.filter(l=>l.id!==id));
       setView('list'); msg('Slettet');
@@ -517,13 +535,48 @@ export default function CRMApp() {
     setSaving(true);
     try {
       const ids=[...bulkSel];
-      const {error} = await supabase.from('leads').delete().in('id',ids);
+      await supabase.from('outreaches').delete().in('lead_id', ids);
+      const {error} = await supabase.from('leads').delete().in('id', ids);
       if(error) throw error;
       setLeads(leads.filter(l=>!bulkSel.has(l.id)));
       msg(ids.length+' leads slettet');
       setBulkSel(new Set()); setBulk(false);
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
+  };
+
+  const deleteAllLeads = async () => {
+    if(!confirm('Slet ALLE leads permanent? Dette kan ikke fortrydes.')) return;
+    if(!confirm('Er du helt sikker? Alle '+leads.length+' leads slettes.')) return;
+    setSaving(true);
+    try {
+      await supabase.from('outreaches').delete().neq('id','00000000-0000-0000-0000-000000000000');
+      await supabase.from('leads').delete().neq('id','00000000-0000-0000-0000-000000000000');
+      setLeads([]); msg('Alle leads slettet');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
+  };
+
+  const renameCategory = async (oldCat, newCat) => {
+    if(!newCat.trim()||oldCat===newCat) return;
+    try {
+      const {error} = await supabase.from('leads').update({category:newCat}).eq('category',oldCat);
+      if(error) throw error;
+      setLeads(leads.map(l=>l.category===oldCat?{...l,category:newCat}:l));
+      msg('Kategori omdøbt');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+  };
+
+  const deleteCategoryLeads = async (cat) => {
+    if(!confirm(`Slet alle leads i kategorien "${cat}"?`)) return;
+    const ids = leads.filter(l=>l.category===cat).map(l=>l.id);
+    if(!ids.length) return;
+    try {
+      await supabase.from('outreaches').delete().in('lead_id', ids);
+      const {error} = await supabase.from('leads').delete().eq('category', cat);
+      if(error) throw error;
+      setLeads(leads.filter(l=>l.category!==cat)); msg('Kategori slettet');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
   };
 
   const importLeads = async () => {
@@ -587,6 +640,7 @@ export default function CRMApp() {
     {id:'list',label:'Leads'},
     {id:'import',label:'Importér'},
     {id:'shopify_settings',label:'Shopify'},
+    {id:'settings',label:'Indstillinger'},
   ];
 
   return(
@@ -687,15 +741,38 @@ export default function CRMApp() {
 
             <div style={{...CC.card,padding:20}}>
               <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                {allCats.map(cat=>{
-                  const cnt=leads.filter(l=>l.category===cat).length;
-                  const wonC=leads.filter(l=>l.category===cat&&l.status==='won').length;
-                  if(!cnt)return null;
+              <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                {catHierarchy.map(parent=>{
+                  const parentCats = parent.subs.length>0 ? parent.subs : [parent.name];
+                  const total = leads.filter(l=>l.category===parent.name||parent.subs.includes(l.category)).length;
+                  const wonC = leads.filter(l=>(l.category===parent.name||parent.subs.includes(l.category))&&l.status==='won').length;
+                  const outC = leads.filter(l=>(l.category===parent.name||parent.subs.includes(l.category))&&l.status==='outreach_done').length;
+                  if(!total) return null;
                   return(
-                    <div key={cat} style={{...CC.inner,padding:'10px 14px',cursor:'pointer'}} onClick={()=>{setFCats(new Set([cat]));setView('list');}}>
-                      <div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{cat}</div>
-                      <div style={{fontSize:11,color:'#4b5563'}}>{cnt} leads · <span style={{color:'#22c55e'}}>{wonC} solgt</span></div>
+                    <div key={parent.name} style={{...CC.inner,padding:'12px 16px'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:parent.subs.length?10:0,cursor:'pointer'}}
+                        onClick={()=>{setFCats(new Set([parent.name,...parent.subs]));setView('list');}}>
+                        <span style={{fontSize:14,fontWeight:700}}>{parent.name}</span>
+                        <span style={{fontSize:12,color:'#6b7280'}}>{total} leads · <span style={{color:'#22c55e'}}>{wonC} solgt</span> · <span style={{color:'#3b82f6'}}>{outC} outreach</span></span>
+                      </div>
+                      {parent.subs.length>0&&(
+                        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                          {parent.subs.map(sub=>{
+                            const subLabel=sub.replace(parent.name,'').replace(/^\s*\(|\)\s*$/g,'').trim();
+                            const cnt=leads.filter(l=>l.category===sub).length;
+                            const won=leads.filter(l=>l.category===sub&&l.status==='won').length;
+                            if(!cnt) return null;
+                            return(
+                              <div key={sub} style={{background:'#0a0f1e',border:'1px solid #1f2937',borderRadius:7,padding:'5px 10px',cursor:'pointer',fontSize:12}}
+                                onClick={()=>{setFCats(new Set([sub]));setView('list');}}>
+                                <span style={{color:'#9ca3af'}}>{subLabel}</span>
+                                <span style={{color:'#4b5563',marginLeft:6}}>{cnt}</span>
+                                {won>0&&<span style={{color:'#22c55e',marginLeft:4}}>· {won} solgt</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -727,6 +804,65 @@ export default function CRMApp() {
               2. Udvikl apps → Opret en app<br/>
               3. Admin API scopes: read_orders, read_products<br/>
               4. Installér appen → kopiér Admin API access token
+            </div>
+          </div>
+        )}
+
+        {/* SETTINGS */}
+        {view==='settings'&&(
+          <div style={{padding:28,maxWidth:680}}>
+            <h2 style={{fontWeight:700,marginBottom:6}}>Indstillinger</h2>
+            <div style={{color:'#4b5563',fontSize:13,marginBottom:24}}>Administrer data, kategorier og lande</div>
+
+            {/* Danger zone */}
+            <div style={{...CC.card,padding:20,marginBottom:16,border:'1px solid #ef444430'}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#ef4444',marginBottom:12}}>Slet alle leads</div>
+              <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>Sletter permanent alle {leads.length} leads og tilhørende outreaches. Kan ikke fortrydes.</div>
+              <button className="btn btn-d" disabled={saving||leads.length===0} onClick={deleteAllLeads}>{saving?'Sletter...':'Slet alle '+leads.length+' leads'}</button>
+            </div>
+
+            {/* Kategori management */}
+            <div style={{...CC.card,padding:20,marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:4}}>Kategorier</div>
+              <div style={{fontSize:12,color:'#4b5563',marginBottom:14}}>{allCats.length} kategorier · klik på en kategori for at omdøbe eller slette den</div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {allCats.map(cat=>{
+                  const cnt=leads.filter(l=>l.category===cat).length;
+                  const isEditing=settingsRename[cat]!==undefined;
+                  return(
+                    <div key={cat} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'#0d1420',borderRadius:8,border:'1px solid #1a2332'}}>
+                      {isEditing?(
+                        <>
+                          <input className="inp" style={{flex:1,padding:'4px 8px',fontSize:13}} value={settingsRename[cat]} onChange={e=>setSettingsRename(r=>({...r,[cat]:e.target.value}))}
+                            onKeyDown={e=>{if(e.key==='Enter'){renameCategory(cat,settingsRename[cat]);setSettingsRename(r=>{const n={...r};delete n[cat];return n;});}if(e.key==='Escape')setSettingsRename(r=>{const n={...r};delete n[cat];return n;});}}/>
+                          <button className="btn btn-p" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>{renameCategory(cat,settingsRename[cat]);setSettingsRename(r=>{const n={...r};delete n[cat];return n;});}}>Gem</button>
+                          <button className="btn btn-g" style={{fontSize:11,padding:'4px 8px'}} onClick={()=>setSettingsRename(r=>{const n={...r};delete n[cat];return n;})}>Annuller</button>
+                        </>
+                      ):(
+                        <>
+                          <span style={{flex:1,fontSize:13}}>{cat}</span>
+                          <span style={{fontSize:11,color:'#4b5563'}}>{cnt} leads</span>
+                          <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setSettingsRename(r=>({...r,[cat]:cat}))}>Omdøb</button>
+                          <button className="btn btn-d" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>deleteCategoryLeads(cat)}>Slet</button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Lande */}
+            <div style={{...CC.card,padding:20}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:4}}>Lande i databasen</div>
+              <div style={{fontSize:12,color:'#4b5563',marginBottom:14}}>Lande opdages automatisk ved import</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                {allCountries.map(c=>(
+                  <div key={c} style={{background:'#0d1420',border:'1px solid #1a2332',borderRadius:7,padding:'6px 14px',fontSize:13}}>
+                    {c} · <span style={{color:'#4b5563'}}>{leads.filter(l=>l.country===c).length} leads</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -793,7 +929,7 @@ export default function CRMApp() {
                   <div key={k}><label>{lb}</label><input className="inp" type={t} value={editLead[k]||''} onChange={e=>setEditLead({...editLead,[k]:e.target.value})}/></div>
                 ))}
                 <div><label>Kategori</label><input className="inp" value={editLead.category||''} onChange={e=>setEditLead({...editLead,category:e.target.value})} list="cat-list"/><datalist id="cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist></div>
-                <div><label>Land</label><select className="inp" value={editLead.country} onChange={e=>setEditLead({...editLead,country:e.target.value})}>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select></div>
+                <div><label>Land</label><input className="inp" value={editLead.country||''} onChange={e=>setEditLead({...editLead,country:e.target.value})} list="country-list"/><datalist id="country-list">{[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}/>)}</datalist></div>
                 <div><label>Status</label><select className="inp" value={editLead.status} onChange={e=>setEditLead({...editLead,status:e.target.value})}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                 <div><label>Kontaktperson</label><input className="inp" value={editLead.contact_person||''} onChange={e=>setEditLead({...editLead,contact_person:e.target.value})}/></div>
               </div>
@@ -921,28 +1057,57 @@ export default function CRMApp() {
             <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap',alignItems:'center'}}>
               <input className="inp" style={{maxWidth:200}} placeholder="Søg..." value={search} onChange={e=>setSearch(e.target.value)}/>
 
-              {/* Multi-select kategori dropdown */}
+              {/* Hierarkisk kategori mega-menu */}
               <div style={{position:'relative'}}>
-                <button className="btn btn-g" style={{whiteSpace:'nowrap',minWidth:160,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}
+                <button className="btn btn-g" style={{whiteSpace:'nowrap',minWidth:170,textAlign:'left',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8}}
                   onClick={()=>setCatOpen(o=>!o)}>
                   <span>{fCats.size===0?'Alle kategorier':`${fCats.size} valgt`}</span>
-                  <span style={{fontSize:10}}>▼</span>
+                  <span style={{fontSize:10}}>{catOpen?'▲':'▼'}</span>
                 </button>
                 {catOpen&&(
-                  <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#111827',border:'1px solid #1f2937',borderRadius:10,minWidth:220,maxHeight:320,overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',padding:'6px 0'}}>
+                  <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,zIndex:200,background:'#111827',border:'1px solid #1f2937',borderRadius:10,minWidth:260,maxHeight:420,overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,0.6)',padding:'6px 0'}}>
                     <div style={{padding:'6px 12px',borderBottom:'1px solid #1f2937',display:'flex',gap:8}}>
-                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set())}>Ryd</button>
-                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set(allCats))}>Alle</button>
+                      <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>setFCats(new Set())}>Ryd alle</button>
                     </div>
-                    {allCats.map(c=>(
-                      <div key={c} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px',cursor:'pointer',background:fCats.has(c)?'#0ea5e915':'transparent'}}
-                        onClick={()=>{const n=new Set(fCats);n.has(c)?n.delete(c):n.add(c);setFCats(n);}}>
-                        <div style={{width:14,height:14,borderRadius:3,border:'1px solid '+(fCats.has(c)?'#0ea5e9':'#374151'),background:fCats.has(c)?'#0ea5e9':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                          {fCats.has(c)&&<span style={{color:'#fff',fontSize:10,lineHeight:1}}>✓</span>}
+                    {catHierarchy.map(parent=>{
+                      const parentSelected = fCats.has(parent.name);
+                      const subSel = parent.subs.filter(s=>fCats.has(s)).length;
+                      const allSubSel = parent.subs.length>0 && parent.subs.every(s=>fCats.has(s));
+                      const hierExpanded = catHierOpen.has(parent.name);
+                      const toggleParent = ()=>{
+                        const n=new Set(fCats);
+                        if(parent.subs.length===0){parentSelected?n.delete(parent.name):n.add(parent.name);}
+                        else{if(allSubSel){parent.subs.forEach(s=>n.delete(s));n.delete(parent.name);}else{parent.subs.forEach(s=>n.add(s));n.add(parent.name);}}
+                        setFCats(n);
+                      };
+                      const isSel = parent.subs.length===0?parentSelected:(subSel>0||parentSelected);
+                      return(
+                        <div key={parent.name}>
+                          <div style={{display:'flex',alignItems:'center',padding:'7px 12px',cursor:'pointer',background:isSel?'#0ea5e910':'transparent',gap:6}}
+                            onClick={parent.subs.length===0?toggleParent:()=>{const n=new Set(catHierOpen);n.has(parent.name)?n.delete(parent.name):n.add(parent.name);setCatHierOpen(n);}}>
+                            <div style={{width:14,height:14,borderRadius:3,border:'1px solid '+(isSel?'#0ea5e9':'#374151'),background:isSel?'#0ea5e9':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}
+                              onClick={e=>{e.stopPropagation();toggleParent();}}>
+                              {isSel&&<span style={{color:'#fff',fontSize:10,lineHeight:1}}>✓</span>}
+                            </div>
+                            <span style={{fontSize:13,fontWeight:600,flex:1,color:isSel?'#e2e8f0':'#9ca3af'}}>{parent.name}</span>
+                            {parent.subs.length>0&&<span style={{fontSize:10,color:'#4b5563'}}>{subSel>0?`${subSel}/${parent.subs.length}`:''} {hierExpanded?'▲':'▼'}</span>}
+                          </div>
+                          {parent.subs.length>0&&hierExpanded&&parent.subs.map(sub=>{
+                            const subLabel=sub.replace(parent.name,'').replace(/^\s*\(|\)\s*$/g,'').trim();
+                            const sel=fCats.has(sub);
+                            return(
+                              <div key={sub} style={{display:'flex',alignItems:'center',gap:6,padding:'5px 12px 5px 32px',cursor:'pointer',background:sel?'#0ea5e908':'transparent'}}
+                                onClick={()=>{const n=new Set(fCats);sel?n.delete(sub):n.add(sub);setFCats(n);}}>
+                                <div style={{width:12,height:12,borderRadius:2,border:'1px solid '+(sel?'#0ea5e9':'#374151'),background:sel?'#0ea5e9':'transparent',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  {sel&&<span style={{color:'#fff',fontSize:9,lineHeight:1}}>✓</span>}
+                                </div>
+                                <span style={{fontSize:12,color:sel?'#e2e8f0':'#6b7280'}}>{subLabel}</span>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <span style={{fontSize:12,color:fCats.has(c)?'#e2e8f0':'#9ca3af'}}>{c}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -971,7 +1136,7 @@ export default function CRMApp() {
                       <td style={{padding:'10px 14px',color:'#4b5563',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email||'—'}</td>
                       <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.city||'—'}</td>
                       <td style={{padding:'10px 14px'}}><StatusBadge value={lead.status}/></td>
-                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12}}>{lead.outreaches.length}x · {lead.outreaches[lead.outreaches.length-1].date}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
+                      <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12,lineHeight:1.6}}>{lead.outreaches.length}x{lead.outreaches.map(o=>o.date).filter(Boolean).map(d=><span key={d} style={{display:'block',fontSize:11,color:'#4b5563'}}>{d}</span>)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                       <td style={{padding:'10px 14px'}}>{lead.sale_info?<span style={{color:'#4ade80',fontSize:12,fontWeight:600}}>{lead.sale_info.slice(0,32)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                     </tr>
                   ))}
