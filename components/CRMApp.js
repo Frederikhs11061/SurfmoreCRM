@@ -57,13 +57,28 @@ function findEmail(p){return p.findIndex(x=>/^[^\s@,]+@[^\s@,]+\.[^\s@,]{2,}$/.t
 // Detect if a field is a sale/revenue field ("Købt X stk", "Solgt X stk", "Bestilt X stk")
 function isSaleField(s){ return s && /købt|solgt|bestilt|leveret|faktura/i.test(s); }
 
+// Normalize date string to YYYY-MM-DD (required by Supabase DATE column)
+function normDateForDB(s) {
+  if (!s) return null;
+  // Already ISO: "2025-11-27"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // European DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+  const m = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // Short year: DD.MM.YY
+  const m2 = s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2})$/);
+  if (m2) return `20${m2[3]}-${m2[2].padStart(2,'0')}-${m2[1].padStart(2,'0')}`;
+  return null;
+}
+
 // Extract outreach entries from a text field
 function parseOtrField(raw, isSale=false) {
   if(!raw||!raw.trim()) return [];
-  const dm = raw.match(/(\d{1,2}[\.\/-]\d{1,2}[\.\/-]?\d{0,4})/);
+  const dm = raw.match(/(\d{1,2}[\.\/-]\d{1,2}[\.\/-]?\d{2,4})/);
   const bm = raw.match(/^([A-Za-z\xC6\xE6\xD8\xF8\xC5\xE5\/]+)[\s\-–]+/);
+  const rawDate = dm ? dm[1] : '';
   return [{
-    date: dm ? dm[1] : '',
+    date: normDateForDB(rawDate) || null,
     by: bm ? bm[1].trim() : 'Jeppe',
     note: raw.trim(),
     sale_info: isSale ? raw.trim() : ''
@@ -597,8 +612,9 @@ export default function CRMApp() {
         const {data,error} = await supabase.from('leads').insert(leadData).select().single();
         if(error) throw error;
         if(_outreaches&&_outreaches.length>0){
-          const rows=_outreaches.map(o=>({lead_id:data.id,...o}));
-          await supabase.from('outreaches').insert(rows);
+          const rows=_outreaches.map(o=>({lead_id:data.id,by:o.by||'Jeppe',note:o.note||'',date:o.date||null,sale_info:o.sale_info||''}));
+          const {error:oErr} = await supabase.from('outreaches').insert(rows);
+          if(oErr) console.warn('Outreach insert fejl for', data.id, oErr.message);
         }
       }
       await loadLeads();
@@ -695,12 +711,40 @@ export default function CRMApp() {
       <div style={{flex:1,overflow:'auto',minWidth:0}}>
 
         {/* DASHBOARD */}
-        {view==='dashboard'&&(
+        {view==='dashboard'&&(()=>{
+          // Pipeline data
+          const pipelineStages = [
+            {key:'not_contacted',label:'Ikke kontaktet',color:'#64748b',count:stats.nc},
+            {key:'outreach_done',label:'Outreach sendt',color:'#3b82f6',count:stats.out},
+            {key:'won',label:'Solgt',color:'#22c55e',count:stats.won},
+          ];
+          const maxPipe = Math.max(...pipelineStages.map(s=>s.count),1);
+
+          // Recent activity: last 8 outreaches across all leads
+          const recentActivity = leads
+            .flatMap(l=>(l.outreaches||[]).map(o=>({...o,leadName:l.name,leadId:l.id,leadCat:l.category})))
+            .filter(o=>o.date)
+            .sort((a,b)=>(b.date||'').localeCompare(a.date||''))
+            .slice(0,8);
+
+          // Follow-up: leads with outreach_done but oldest last outreach
+          const needFollowUp = leads
+            .filter(l=>l.status==='outreach_done')
+            .map(l=>{
+              const lastOtr=(l.outreaches||[]).filter(o=>o.date).sort((a,b)=>b.date.localeCompare(a.date))[0];
+              return {...l,lastOtrDate:lastOtr?.date||null};
+            })
+            .sort((a,b)=>(a.lastOtrDate||'').localeCompare(b.lastOtrDate||''))
+            .slice(0,5);
+
+          const noEmail = leads.filter(l=>!l.email).length;
+
+          return(
           <div style={{padding:28}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
               <div>
                 <h1 style={{fontSize:22,fontWeight:700,marginBottom:3}}>Dashboard</h1>
-                <div style={{color:'#4b5563',fontSize:13}}>Overblik over leads og omsætning</div>
+                <div style={{color:'#4b5563',fontSize:13}}>Overblik over leads og aktivitet</div>
               </div>
               <div style={{display:'flex',gap:8}}>
                 {shopOK&&<button className="btn btn-g" onClick={refreshShop} disabled={shopLoading} style={{fontSize:12}}>{shopLoading?'Henter...':'Synk Shopify'}</button>}
@@ -709,50 +753,148 @@ export default function CRMApp() {
               </div>
             </div>
 
+            {/* Top KPI cards */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:14}}>
-              {[{l:'Totale leads',v:stats.total,c:'#6366f1'},{l:'Ikke kontaktet',v:stats.nc,c:'#64748b'},{l:'Outreach sendt',v:stats.out,c:'#3b82f6'},{l:'Solgt',v:stats.won,c:'#22c55e'}].map(s=>(
-                <div key={s.l} style={{...CC.card,padding:'18px 20px'}}>
+              {[
+                {l:'Totale leads',v:stats.total,c:'#6366f1',sub:'i databasen',click:()=>setView('list')},
+                {l:'Ikke kontaktet',v:stats.nc,c:'#64748b',sub:'klar til outreach',click:()=>{setFStatus('not_contacted');setView('list');}},
+                {l:'Outreach sendt',v:stats.out,c:'#3b82f6',sub:'afventer svar',click:()=>{setFStatus('outreach_done');setView('list');}},
+                {l:'Solgt',v:stats.won,c:'#22c55e',sub:'konverterede leads',click:()=>{setFStatus('won');setView('list');}},
+              ].map(s=>(
+                <div key={s.l} style={{...CC.card,padding:'18px 20px',cursor:'pointer'}} onClick={s.click}>
                   <div style={{fontSize:10,color:s.c,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>{s.l}</div>
-                  <div style={{fontSize:30,fontWeight:700,color:s.c}}>{s.v}</div>
+                  <div style={{fontSize:30,fontWeight:700,color:s.c,marginBottom:4}}>{s.v}</div>
+                  <div style={{fontSize:11,color:'#4b5563'}}>{s.sub}</div>
                 </div>
               ))}
             </div>
 
-            {shopOK&&(
-              <>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:14}}>
-                  {[
-                    {l:'Total omsætning',v:totalRev.toLocaleString('da-DK',{maximumFractionDigits:0})+' kr',c:'#22c55e',sub:(growth>0?'+':'')+growth.toFixed(1)+'% vs forrige måned'},
-                    {l:'Betalte ordrer',v:paid.length,c:'#0ea5e9',sub:'Alle tider'},
-                    {l:'Denne måned',v:revThis.toLocaleString('da-DK',{maximumFractionDigits:0})+' kr',c:'#f59e0b',sub:new Date().toLocaleString('da-DK',{month:'long',year:'numeric'})},
-                  ].map(s=>(
-                    <div key={s.l} style={{...CC.card,padding:'18px 20px'}}>
-                      <div style={{fontSize:10,color:s.c,fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>{s.l}</div>
-                      <div style={{fontSize:26,fontWeight:700,color:s.c,marginBottom:3}}>{s.v}</div>
-                      <div style={{fontSize:11,color:'#4b5563'}}>{s.sub}</div>
+            {/* Pipeline + Activity row */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+
+              {/* Pipeline funnel */}
+              <div style={{...CC.card,padding:20}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:16}}>Pipeline</div>
+                <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                  {pipelineStages.map((s,i)=>{
+                    const pct = stats.total>0?Math.round(s.count/stats.total*100):0;
+                    const conv = i>0&&pipelineStages[i-1].count>0?Math.round(s.count/pipelineStages[i-1].count*100):null;
+                    return(
+                      <div key={s.key}>
+                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                          <span style={{fontSize:12,color:'#9ca3af',fontWeight:600}}>{s.label}</span>
+                          <span style={{fontSize:12,color:s.color,fontWeight:700}}>{s.count} <span style={{color:'#4b5563',fontWeight:400}}>({pct}%)</span></span>
+                        </div>
+                        <div style={{height:8,background:'#1f2937',borderRadius:4,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:(s.count/maxPipe*100)+'%',background:s.color,borderRadius:4,transition:'width 0.4s'}}/>
+                        </div>
+                        {conv!==null&&<div style={{fontSize:10,color:'#4b5563',marginTop:3,textAlign:'right'}}>↑ {conv}% konvertering fra forrige trin</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid #1f2937',display:'flex',gap:16}}>
+                  <div style={{fontSize:12,color:'#4b5563'}}>
+                    Total outreaches: <span style={{color:'#e2e8f0',fontWeight:600}}>{leads.reduce((s,l)=>s+(l.outreaches||[]).length,0)}</span>
+                  </div>
+                  {noEmail>0&&(
+                    <div style={{fontSize:12,cursor:'pointer',color:'#ef4444'}} onClick={()=>{setFStatus('Alle');setView('list');}}>
+                      {noEmail} leads uden email →
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent activity */}
+              <div style={{...CC.card,padding:20}}>
+                <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Seneste aktivitet</div>
+                {recentActivity.length===0&&<div style={{color:'#4b5563',fontSize:13}}>Ingen outreach-aktivitet endnu</div>}
+                <div style={{display:'flex',flexDirection:'column',gap:0}}>
+                  {recentActivity.map((o,i)=>(
+                    <div key={o.id||i} style={{display:'flex',gap:10,alignItems:'flex-start',padding:'8px 0',borderBottom:i<recentActivity.length-1?'1px solid #0d1420':'none',cursor:'pointer'}}
+                      onClick={()=>{const l=leads.find(x=>x.id===o.leadId);if(l){setSel(l);setView('detail');}}}>
+                      <div style={{width:7,height:7,borderRadius:'50%',background:'#3b82f6',marginTop:5,flexShrink:0}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.leadName}</div>
+                        <div style={{fontSize:11,color:'#4b5563',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.note||'Outreach sendt'}</div>
+                      </div>
+                      <div style={{fontSize:11,color:'#4b5563',flexShrink:0}}>{o.date}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
-                  <div style={{...CC.card,padding:20}}><div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Månedlig omsætning</div><MiniLineChart data={monthly}/></div>
-                  <div style={{...CC.card,padding:20}}><div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Top produkter</div><HBarChart data={products}/></div>
-                </div>
-              </>
-            )}
+                {recentActivity.length>0&&<button className="btn btn-g" style={{fontSize:11,marginTop:10,width:'100%'}} onClick={()=>setView('list')}>Se alle leads →</button>}
+              </div>
+            </div>
 
-            {!shopOK&&(
-              <div style={{...CC.card,padding:24,textAlign:'center',marginBottom:14}}>
-                <div style={{fontSize:14,fontWeight:600,marginBottom:6}}>Tilslut Shopify for omsætnings-dashboard</div>
-                <div style={{color:'#4b5563',fontSize:13,marginBottom:14}}>Se ordrer, omsætning og top-produkter direkte her</div>
-                <button className="btn btn-p" onClick={()=>setView('shopify_settings')}>Tilslut Shopify</button>
+            {/* Follow-up + no-email row */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+
+              {/* Needs follow-up */}
+              <div style={{...CC.card,padding:20}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#9ca3af'}}>Opfølgning mangler</div>
+                  <span style={{fontSize:11,color:'#4b5563'}}>ældste outreach først</span>
+                </div>
+                {needFollowUp.length===0&&<div style={{color:'#4b5563',fontSize:13}}>Ingen afventende leads</div>}
+                {needFollowUp.map((l,i)=>(
+                  <div key={l.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<needFollowUp.length-1?'1px solid #0d1420':'none',cursor:'pointer'}}
+                    onClick={()=>{setSel(l);setView('detail');}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.name}</div>
+                      <div style={{fontSize:11,color:'#4b5563'}}>{l.category}</div>
+                    </div>
+                    <div style={{fontSize:11,color:l.lastOtrDate?'#f59e0b':'#ef4444',flexShrink:0}}>{l.lastOtrDate||'Ingen dato'}</div>
+                  </div>
+                ))}
+                {needFollowUp.length>0&&<button className="btn btn-g" style={{fontSize:11,marginTop:10,width:'100%'}} onClick={()=>{setFStatus('outreach_done');setView('list');}}>Se alle outreach leads →</button>}
+              </div>
+
+              {/* Shopify OR leads without email */}
+              <div style={{...CC.card,padding:20}}>
+                {shopOK?(
+                  <>
+                    <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Shopify overblik</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+                      {[
+                        {l:'Total omsætning',v:totalRev.toLocaleString('da-DK',{maximumFractionDigits:0})+' kr',c:'#22c55e'},
+                        {l:'Betalte ordrer',v:paid.length,c:'#0ea5e9'},
+                        {l:'Denne måned',v:revThis.toLocaleString('da-DK',{maximumFractionDigits:0})+' kr',c:'#f59e0b'},
+                        {l:'Vækst vs. forrige',v:(growth>0?'+':'')+growth.toFixed(1)+'%',c:growth>=0?'#22c55e':'#ef4444'},
+                      ].map(s=>(
+                        <div key={s.l} style={{background:'#0d1420',borderRadius:8,padding:'10px 12px'}}>
+                          <div style={{fontSize:10,color:'#4b5563',marginBottom:3}}>{s.l}</div>
+                          <div style={{fontSize:16,fontWeight:700,color:s.c}}>{s.v}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <MiniLineChart data={monthly}/>
+                  </>
+                ):(
+                  <>
+                    <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:10}}>Hurtige genveje</div>
+                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                      <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={openAdd}>+ Tilføj nyt lead manuelt</button>
+                      <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={()=>setView('import')}>↑ Importér leads fra CSV</button>
+                      <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={()=>setView('shopify_settings')}>⚡ Tilslut Shopify</button>
+                      {noEmail>0&&<button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12,color:'#ef4444',borderColor:'#ef444430'}} onClick={()=>setView('list')}>{noEmail} leads mangler email →</button>}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {shopOK&&(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+                <div style={{...CC.card,padding:20}}><div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Månedlig omsætning</div><MiniLineChart data={monthly}/></div>
+                <div style={{...CC.card,padding:20}}><div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Top produkter</div><HBarChart data={products}/></div>
               </div>
             )}
 
+            {/* Leads pr. kategori */}
             <div style={{...CC.card,padding:20}}>
               <div style={{fontSize:13,fontWeight:600,color:'#9ca3af',marginBottom:14}}>Leads pr. kategori</div>
               <div style={{display:'flex',flexDirection:'column',gap:12}}>
                 {catHierarchy.map(parent=>{
-                  const parentCats = parent.subs.length>0 ? parent.subs : [parent.name];
                   const total = leads.filter(l=>l.category===parent.name||parent.subs.includes(l.category)).length;
                   const wonC = leads.filter(l=>(l.category===parent.name||parent.subs.includes(l.category))&&l.status==='won').length;
                   const outC = leads.filter(l=>(l.category===parent.name||parent.subs.includes(l.category))&&l.status==='outreach_done').length;
@@ -773,7 +915,7 @@ export default function CRMApp() {
                             if(!cnt) return null;
                             return(
                               <div key={sub} style={{background:'#0a0f1e',border:'1px solid #1f2937',borderRadius:7,padding:'5px 10px',cursor:'pointer',fontSize:12}}
-                                onClick={()=>{setFCats(new Set([sub]));setView('list');}}>
+                                onClick={e=>{e.stopPropagation();setFCats(new Set([sub]));setView('list');}}>
                                 <span style={{color:'#9ca3af'}}>{subLabel}</span>
                                 <span style={{color:'#4b5563',marginLeft:6}}>{cnt}</span>
                                 {won>0&&<span style={{color:'#22c55e',marginLeft:4}}>· {won} solgt</span>}
@@ -788,7 +930,8 @@ export default function CRMApp() {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* SHOPIFY */}
         {view==='shopify_settings'&&(
@@ -962,10 +1105,16 @@ export default function CRMApp() {
               <button className="btn btn-g" onClick={()=>openEdit(sel)}>Rediger</button>
               <button className="btn btn-d" onClick={()=>delLead(sel.id)}>Slet</button>
             </div>
+            {!sel.email&&(
+              <div style={{background:'#ef444415',border:'1px solid #ef444430',borderRadius:10,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <span style={{fontSize:13,color:'#ef4444'}}>Ingen email på dette lead</span>
+                <button className="btn btn-p" style={{fontSize:12,padding:'5px 12px'}} onClick={()=>openEdit(sel)}>Tilføj email</button>
+              </div>
+            )}
             <div style={{...CC.card,padding:20,marginBottom:12}}>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
                 {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person]].map(([lb,v])=>(
-                  <div key={lb}><div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div><div style={{fontSize:14}}>{v||'—'}</div></div>
+                  <div key={lb}><div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div><div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>{v||'—'}</div></div>
                 ))}
               </div>
               {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
@@ -1145,7 +1294,7 @@ export default function CRMApp() {
                       </td>}
                       <td style={{padding:'10px 14px',fontWeight:600,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.name}</td>
                       <td style={{padding:'10px 14px'}}><span className="tag">{lead.category}</span></td>
-                      <td style={{padding:'10px 14px',color:'#4b5563',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email||'—'}</td>
+                      <td style={{padding:'10px 14px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email?<span style={{color:'#4b5563'}}>{lead.email}</span>:<span style={{color:'#ef4444',fontSize:11,fontWeight:600}}>+ Tilføj email</span>}</td>
                       <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.city||'—'}</td>
                       <td style={{padding:'10px 14px'}}><StatusBadge value={lead.status}/></td>
                       <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12,lineHeight:1.6}}>{lead.outreaches.length}x{lead.outreaches.map(o=>o.date).filter(Boolean).map(d=><span key={d} style={{display:'block',fontSize:11,color:'#4b5563'}}>{d}</span>)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
