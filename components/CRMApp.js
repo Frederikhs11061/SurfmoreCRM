@@ -409,7 +409,10 @@ export default function CRMApp() {
     const rows = parseCSVFull(txt.trim(), sep);
     const headerIdx = rows.findIndex(r => isHeader(r));
     const colMap = headerIdx >= 0 ? buildColMap(rows[headerIdx]) : { otrCols: [] };
-    const useHeaderFormat = headerIdx >= 0 && (colMap.navn != null || colMap.mail != null);
+    // Brug header-format hvis vi kan finde enten navn, mail, land eller kategori i headeren
+    const useHeaderFormat =
+      headerIdx >= 0 &&
+      (colMap.navn != null || colMap.mail != null || colMap.land != null || colMap.kategori != null);
     const dataRows = headerIdx >= 0 ? rows.filter((_, i) => i !== headerIdx) : rows;
     return dataRows.map(row =>
       useHeaderFormat ? parseLineWithMap(row, colMap, '', '') : parseLineLegacy(row, '', '')
