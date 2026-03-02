@@ -495,6 +495,18 @@ export default function CRMApp() {
     return 0;
   });
 
+  const resetFiltersAndSort = () => {
+    setSearch('');
+    setFCats(new Set());
+    setFStatus('Alle');
+    setFCountry('Alle');
+    setCatOpen(false);
+    setCatSearch('');
+    setCatHierOpen(new Set());
+    setSortKey('created_at');
+    setSortDir('desc');
+  };
+
   const openAdd = () => { setEditLead({...DEFAULT_LEAD}); setView('add'); };
   const openEdit = l => { setEditLead({...l}); setView('add'); };
 
@@ -1477,7 +1489,8 @@ export default function CRMApp() {
                 <option value="Alle">Alle lande</option>
                 {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
               </select>
-              <span style={{fontSize:13,color:'#4b5563',marginLeft:'auto'}}>{filtered.length} leads</span>
+              <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
+              <span style={{fontSize:13,color:'#4b5563'}}>{filtered.length} leads</span>
             </div>
 
             <div style={{...CC.card,overflow:'auto'}}>
