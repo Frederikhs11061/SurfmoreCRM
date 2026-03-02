@@ -573,6 +573,18 @@ export default function CRMApp() {
     setSortDir('desc');
   };
 
+  const copyEmailsNoOutreach = async () => {
+    try{
+      const list = filtered.filter(l=>l.status==='not_contacted' && l.email && /\S+@\S+\.\S+/.test(l.email));
+      if(!list.length) return msg('Ingen gyldige emails blandt ikke kontaktede leads','err');
+      const text = list.map(l=>l.email.trim()).join(', ');
+      await navigator.clipboard.writeText(text);
+      msg(list.length+' emails kopieret til udklipsholderen');
+    }catch(e){
+      msg('Kunne ikke kopiere emails: '+(e.message||''),'err');
+    }
+  };
+
   const openNewTemplate = () => {
     setEditTpl({
       id:null,
@@ -1375,10 +1387,12 @@ export default function CRMApp() {
                           <span style={{fontSize:10}}>{tplCatOpen?'▲':'▼'}</span>
                         </button>
                         {tplCatOpen&&(
-                          <div style={{position:'absolute',zIndex:300,top:'calc(100% + 4px)',left:0,right:0,background:'#020617',border:'1px solid #1f2937',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,0.6)',maxHeight:260,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-                            <div style={{padding:'6px 8px',borderBottom:'1px solid #1f2937',display:'flex',gap:6}}>
+                          <div style={{position:'absolute',zIndex:300,top:'calc(100% + 4px)',left:0,right:0,background:'#020617',border:'1px solid #1f2937',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,0.6)',maxHeight:260,overflow:'hidden',display:'flex',flexDirection:'column'}}
+                            onMouseLeave={()=>setTplCatOpen(false)}>
+                            <div style={{padding:'6px 8px',borderBottom:'1px solid #1f2937',display:'flex',gap:6,alignItems:'center'}}>
                               <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Søg kategori..." value={tplCatSearch} onChange={e=>setTplCatSearch(e.target.value)}/>
-                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>{setTplCats(new Set());setTplCatSearch('');}}>Ryd</button>
+                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 6px'}} onClick={()=>{setTplCats(new Set());setTplCatSearch('');}}>Ryd</button>
+                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 6px'}} onClick={()=>setTplCatOpen(false)}>Luk</button>
                             </div>
                             <div style={{padding:'4px 0',overflowY:'auto'}}>
                               {catHierarchy.filter(parent=>{
@@ -1842,6 +1856,7 @@ export default function CRMApp() {
                 {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
               </select>
               <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
+              <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px'}} onClick={copyEmailsNoOutreach}>Kopier emails (ikke kontaktet)</button>
               <span style={{fontSize:13,color:'#4b5563'}}>{filtered.length} leads</span>
             </div>
 
