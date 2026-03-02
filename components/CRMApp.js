@@ -1275,8 +1275,9 @@ export default function CRMApp() {
 
         {/* TEMPLATES */}
         {view==='templates'&&(
-          <div style={{padding:28,position:'relative'}}>
-            <div style={{minWidth:0,maxWidth:720}}>
+          <div style={{padding:28,display:'grid',gridTemplateColumns:'minmax(0,1.4fr) minmax(0,1fr)',gap:20,alignItems:'flex-start'}}>
+            {/* Liste over templates */}
+            <div style={{minWidth:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
                 <div>
                   <h2 style={{fontWeight:700,marginBottom:4}}>Mail templates</h2>
@@ -1324,10 +1325,8 @@ export default function CRMApp() {
               </div>
             </div>
 
-            {/* Editor / preview modal */}
-            {editTpl&&(
-              <div style={{position:'fixed',inset:0,zIndex:400,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
-                <div style={{width:'100%',maxWidth:980,maxHeight:'90vh',overflow:'auto',display:'grid',gridTemplateColumns:'minmax(0,1.3fr) minmax(0,1fr)',gap:18,background:'#020617',border:'1px solid #1f2937',borderRadius:16,boxShadow:'0 20px 60px rgba(0,0,0,0.8)',padding:20}}>
+            {/* Editor / preview i højre kolonne */}
+            <div style={{minWidth:0}}>
               <div style={{...CC.card,padding:18,marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                   <div style={{fontSize:13,fontWeight:600}}>Editor</div>
