@@ -1486,7 +1486,7 @@ export default function CRMApp() {
               <div style={{...CC.card,padding:16}}>
                 <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Tokens</div>
                 <div style={{fontSize:11,color:'#6b7280',marginBottom:8}}>
-                  Brug tokens til at personalisere mails. Skriv f.eks. <code style={{fontFamily:'monospace'}}>Hej {{'{'}{'}'}}lead.name{{'}'}{'}'}}</code> i body.
+                  Brug tokens til at personalisere mails. Skriv f.eks. <code style={{fontFamily:'monospace'}}>Hej {'{{lead.name}}'}</code> i body.
                 </div>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6,fontSize:11}}>
                   {['{{lead.name}}','{{lead.category}}','{{lead.country}}','{{lead.contact_person | default:"der"}}','{{user.name}}','{{company.name}}','{{lead.notes_last}}'].map(t=>(
