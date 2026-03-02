@@ -573,10 +573,11 @@ export default function CRMApp() {
     setSortDir('desc');
   };
 
-  const copyEmailsNoOutreach = async () => {
+  const copyEmailsBulk = async () => {
+    if(bulkSel.size===0) return msg('Vælg leads i bulk først','err');
     try{
-      const list = filtered.filter(l=>l.status==='not_contacted' && l.email && /\S+@\S+\.\S+/.test(l.email));
-      if(!list.length) return msg('Ingen gyldige emails blandt ikke kontaktede leads','err');
+      const list = leads.filter(l=>bulkSel.has(l.id) && l.email && /\S+@\S+\.\S+/.test(l.email));
+      if(!list.length) return msg('Ingen gyldige emails blandt de valgte leads','err');
       const text = list.map(l=>l.email.trim()).join(', ');
       await navigator.clipboard.writeText(text);
       msg(list.length+' emails kopieret til udklipsholderen');
@@ -1318,8 +1319,22 @@ export default function CRMApp() {
                         <td style={{padding:'8px 10px',fontWeight:600}}>{t.name}</td>
                         <td style={{padding:'8px 10px',color:'#9ca3af'}}>{t.type}</td>
                         <td style={{padding:'8px 10px',color:'#9ca3af'}}>{t.language?.toUpperCase()}</td>
-                        <td style={{padding:'8px 10px',color:'#6b7280',fontSize:12}}>
-                          {(t.category_tags||[]).length? (t.category_tags||[]).join(', '): 'Global'}
+                        <td style={{padding:'8px 10px',color:'#6b7280',fontSize:12,verticalAlign:'top'}}>
+                          {(!(t.category_tags||[]).length)&&<span>Global</span>}
+                          {(t.category_tags||[]).length>0&&(
+                            <div style={{display:'flex',flexDirection:'column',gap:3,maxHeight:72,overflow:'hidden'}}>
+                              {(t.category_tags||[]).slice(0,3).map(tag=>(
+                                <div key={tag} style={{whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>
+                                  {tag}
+                                </div>
+                              ))}
+                              {(t.category_tags||[]).length>3&&(
+                                <div style={{fontSize:11,color:'#9ca3af'}}>
+                                  +{(t.category_tags||[]).length-3} flere
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td style={{padding:'8px 10px'}}>
                           <span style={{fontSize:11,padding:'2px 8px',borderRadius:999,background:t.active?'#14532d':'#111827',color:t.active?'#4ade80':'#6b7280',border:'1px solid '+(t.active?'#16a34a55':'#1f2937')}}>
@@ -1435,7 +1450,7 @@ export default function CRMApp() {
                               {!allCats.length&&<div style={{padding:'8px 10px',fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</div>}
                             </div>
                             <div style={{padding:'6px 8px',borderTop:'1px solid #1f2937',display:'flex',gap:6}}>
-                              <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e=>setTplCatCustom(e.target.value)}/>
+                              <input className="inp" style={{flex:1,padding:'7px 9px',fontSize:12,background:'#020617',borderColor:'#2563eb'}} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e=>setTplCatCustom(e.target.value)}/>
                               <button className="btn btn-p" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>{if(!tplCatCustom.trim())return;const n=new Set(tplCats);n.add(tplCatCustom.trim());setTplCats(n);setTplCatCustom('');}}>Tilføj</button>
                             </div>
                           </div>
@@ -1469,37 +1484,14 @@ export default function CRMApp() {
               </div>
 
               <div style={{...CC.card,padding:16}}>
-                <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Preview</div>
-                <div style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
-                  <select className="inp" style={{fontSize:12}} value={tplPreviewLeadId||''} onChange={e=>setTplPreviewLeadId(e.target.value||null)}>
-                    <option value="">Vælg lead til preview</option>
-                    {leads.slice(0,80).map(l=><option key={l.id} value={l.id}>{l.name||l.email||l.id.slice(0,8)}</option>)}
-                  </select>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:6}}>Tokens</div>
+                <div style={{fontSize:11,color:'#6b7280',marginBottom:8}}>
+                  Brug tokens til at personalisere mails. Skriv f.eks. <code style={{fontFamily:'monospace'}}>Hej {{'{'}{'}'}}lead.name{{'}'}{'}'}}</code> i body.
                 </div>
-                <div style={{fontSize:11,color:'#6b7280',marginBottom:6}}>Tilgængelige tokens:</div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10,fontSize:11}}>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,fontSize:11}}>
                   {['{{lead.name}}','{{lead.category}}','{{lead.country}}','{{lead.contact_person | default:"der"}}','{{user.name}}','{{company.name}}','{{lead.notes_last}}'].map(t=>(
                     <span key={t} style={{padding:'2px 6px',borderRadius:6,background:'#020617',border:'1px solid #1f2937',color:'#9ca3af'}}>{t}</span>
                   ))}
-                </div>
-                <div style={{borderTop:'1px solid #1f2937',paddingTop:10,fontSize:12}}>
-                  {editTpl?(()=>{
-                    const lead = tplPreviewLeadId ? leads.find(l=>l.id===tplPreviewLeadId) : null;
-                    if(!lead){
-                      return <div style={{fontSize:13,color:'#4b5563'}}>Vælg et lead ovenfor for at se hvordan subject og body ser ud med rigtige data.</div>;
-                    }
-                    const subj = renderTemplate(editTpl.subject,lead);
-                    const body = renderTemplate(editTpl.body,lead);
-                    return(
-                      <div style={{border:'1px solid #1f2937',borderRadius:10,background:'#020617',padding:'10px 12px'}}>
-                        <div style={{fontSize:11,color:'#6b7280',marginBottom:2}}>Til: {lead.email||'ingen email'}</div>
-                        <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Emne</div>
-                        <div style={{marginBottom:10,color:'#e5e7eb',fontWeight:600}}>{subj||'—'}</div>
-                        <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Body</div>
-                        <div style={{whiteSpace:'pre-wrap',color:'#d1d5db',fontFamily:'system-ui,sans-serif',fontSize:13,lineHeight:1.5}}>{body||'—'}</div>
-                      </div>
-                    );
-                  })():<div style={{fontSize:13,color:'#4b5563'}}>Vælg en template for at se preview.</div>}
                 </div>
               </div>
             </div>
@@ -1784,6 +1776,7 @@ export default function CRMApp() {
                   <div><label>Outreach besked</label><input className="inp" style={{width:180}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
                   <div><label>Salg <span style={{color:'#22c55e',fontSize:10}}>(sætter automatisk → Solgt)</span></label><input className="inp" style={{width:180}} value={bulkSale} onChange={e=>setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
+                  <button className="btn btn-g" style={{padding:'8px 14px',alignSelf:'flex-end',fontSize:13}} disabled={saving||bulkSel.size===0} onClick={copyEmailsBulk}>Kopier emails ({bulkSel.size})</button>
                   <button className="btn btn-d" style={{padding:'8px 16px',alignSelf:'flex-end',fontSize:13}} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
                 </div>
               </div>
@@ -1856,7 +1849,6 @@ export default function CRMApp() {
                 {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
               </select>
               <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
-              <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px'}} onClick={copyEmailsNoOutreach}>Kopier emails (ikke kontaktet)</button>
               <span style={{fontSize:13,color:'#4b5563'}}>{filtered.length} leads</span>
             </div>
 
