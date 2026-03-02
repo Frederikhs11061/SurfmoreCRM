@@ -623,6 +623,25 @@ export default function CRMApp() {
     setSaving(false);
   };
 
+  const deleteDetailNote = async (lead, noteId) => {
+    if (!lead) return;
+    const existing = parseLeadNotes(lead.notes);
+    const next = existing.filter(n => n.id !== noteId);
+    if (existing.length === next.length) return;
+    if (!confirm('Slet denne note?')) return;
+    setSaving(true);
+    try {
+      const raw = next.length ? JSON.stringify(next) : null;
+      const { error } = await supabase.from('leads').update({ notes: raw }).eq('id', lead.id);
+      if (error) throw error;
+      const updated = { ...lead, notes: raw };
+      setLeads(leads.map(l => l.id === lead.id ? updated : l));
+      setSel(updated);
+      msg('Note slettet');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
+  };
+
   const delOtr = async (lead,id) => {
     try {
       const {error} = await supabase.from('outreaches').delete().eq('id',id);
@@ -1281,10 +1300,13 @@ export default function CRMApp() {
                   <div style={{maxHeight:140,overflowY:'auto',border:'1px solid #1f2937',borderRadius:8,marginBottom:8,background:'#080d18'}}>
                     {notesList.length===0&&<div style={{fontSize:12,color:'#4b5563',padding:'8px 10px'}}>Ingen noter endnu</div>}
                     {notesList.map(n=>(
-                      <div key={n.id} style={{padding:'8px 10px',borderBottom:'1px solid #020617'}}>
-                        <div style={{fontSize:12,fontWeight:600,color:'#e5e7eb',marginBottom:2}}>{n.title||'Note'}</div>
-                        {n.created_at&&<div style={{fontSize:10,color:'#6b7280',marginBottom:2}}>{fmtDate((n.created_at||'').slice(0,10))}</div>}
-                        {n.text&&<div style={{fontSize:12,color:'#9ca3af',whiteSpace:'pre-line'}}>{n.text}</div>}
+                      <div key={n.id} style={{padding:'8px 10px',borderBottom:'1px solid #020617',display:'flex',gap:8}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:600,color:'#e5e7eb',marginBottom:2,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>{n.title||'Note'}</div>
+                          {n.created_at&&<div style={{fontSize:10,color:'#6b7280',marginBottom:2}}>{fmtDate((n.created_at||'').slice(0,10))}</div>}
+                          {n.text&&<div style={{fontSize:12,color:'#9ca3af',whiteSpace:'pre-line'}}>{n.text}</div>}
+                        </div>
+                        <button className="btn btn-d" style={{fontSize:10,padding:'3px 6px',alignSelf:'flex-start'}} onClick={()=>deleteDetailNote(sel,n.id)}>×</button>
                       </div>
                     ))}
                   </div>
@@ -1470,13 +1492,27 @@ export default function CRMApp() {
                     {label:'Status',key:'status'},
                     {label:'Outreach',key:'outreach'},
                     {label:'Salg',key:'sale'},
-                  ].map(col=>(
-                    <th key={col.key} style={{padding:'10px 14px',textAlign:'left',color:'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap',cursor:'pointer'}}
-                      onClick={()=>{setSortKey(k=>k===col.key?(k===sortKey&&sortDir==='asc'?'name':col.key):col.key);setSortDir(d=>sortKey===col.key?(d==='asc'?'desc':'asc'):'asc');}}>
-                      <span>{col.label}</span>
-                      {sortKey===col.key&&<span style={{marginLeft:4,fontSize:10}}>{sortDir==='asc'?'▲':'▼'}</span>}
-                    </th>
-                  ))}
+                  ].map(col=>{
+                    const isActive = sortKey===col.key;
+                    const arrow = isActive ? (sortDir==='asc'?'▲':'▼') : '↕';
+                    return (
+                      <th
+                        key={col.key}
+                        style={{padding:'10px 14px',textAlign:'left',color:isActive?'#e5e7eb':'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap',cursor:'pointer'}}
+                        onClick={()=>{
+                          if(sortKey===col.key){
+                            setSortDir(d=>d==='asc'?'desc':'asc');
+                          }else{
+                            setSortKey(col.key);
+                            setSortDir(col.key==='outreach' ? 'desc' : 'asc');
+                          }
+                        }}
+                      >
+                        <span>{col.label}</span>
+                        <span style={{marginLeft:4,fontSize:10,color:isActive?'#e5e7eb':'#6b7280'}}>{arrow}</span>
+                      </th>
+                    );
+                  })}
                 </tr></thead>
                 <tbody>
                   {!sorted.length&&<tr><td colSpan={bulk?8:7} style={{padding:32,textAlign:'center',color:'#4b5563'}}>Ingen leads fundet. <button className="btn btn-g" onClick={openAdd} style={{marginLeft:8}}>+ Tilføj</button></td></tr>}
