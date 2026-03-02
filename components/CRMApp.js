@@ -128,6 +128,48 @@ function parseLeadNotes(raw) {
   return [{ id:'legacy', title:'Note', text:String(raw), created_at:null }];
 }
 
+// Render template body/subject with {{tokens}} for a given lead
+function renderTemplate(str, lead) {
+  if (!str) return '';
+  if (!lead) return str;
+  const notesArr = parseLeadNotes(lead.notes);
+  const lastNote = notesArr.length ? notesArr[notesArr.length-1] : null;
+  const company = { name:'Surfmore' };
+  const user = { name:'Jeppe', email:'info@surfmore.dk' };
+  return str.replace(/\{\{\s*([^}]+)\s*\}\}/g,(m,inner)=>{
+    try{
+      const [pathPart,...rest] = inner.split('|').map(s=>s.trim());
+      let fallback = '';
+      const defPart = rest.find(p=>p.startsWith('default'));
+      if(defPart){
+        const m2 = defPart.match(/default\s*:\s*\"([^\"]*)\"/);
+        if(m2) fallback = m2[1];
+      }
+      const path = pathPart.toLowerCase();
+      let val = '';
+      switch(path){
+        case 'lead.name': val = lead.name; break;
+        case 'lead.category': val = lead.category; break;
+        case 'lead.country': val = lead.country; break;
+        case 'lead.email': val = lead.email; break;
+        case 'lead.city': val = lead.city; break;
+        case 'lead.phone': val = lead.phone; break;
+        case 'lead.contact_person': val = lead.contact_person; break;
+        case 'lead.notes_last': val = lastNote?.text || ''; break;
+        case 'user.name': val = user.name; break;
+        case 'user.email': val = user.email; break;
+        case 'company.name': val = company.name; break;
+        default: val = '';
+      }
+      val = (val || '').toString();
+      if(!val && fallback) return fallback;
+      return val || '';
+    }catch(e){
+      return m;
+    }
+  });
+}
+
 // Build column index map from header row (case-insensitive)
 // All columns named "B2B Outreach" (with or without number) are collected in otrCols[]
 function buildColMap(headerRow) {
@@ -325,6 +367,11 @@ export default function CRMApp() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   const [sel, setSel] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [tplLoading, setTplLoading] = useState(false);
+  const [editTpl, setEditTpl] = useState(null);
+  const [tplCats, setTplCats] = useState(new Set());
+  const [tplPreviewLeadId, setTplPreviewLeadId] = useState(null);
   const [editLead, setEditLead] = useState(null);
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
@@ -361,6 +408,7 @@ export default function CRMApp() {
   // ── Load from Supabase ──────────────────────────────────────────────────
   useEffect(()=>{
     loadLeads();
+    loadTemplates();
   },[]);
 
   const loadLeads = async () => {
@@ -397,6 +445,21 @@ export default function CRMApp() {
       msg('Fejl ved indlæsning: '+e.message, 'err');
     }
     setLoading(false);
+  };
+
+  const loadTemplates = async () => {
+    setTplLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('email_templates')
+        .select('*')
+        .order('updated_at',{ascending:false});
+      if(error) throw error;
+      setTemplates(data||[]);
+    } catch(e) {
+      msg('Fejl ved indlæsning af templates: '+e.message,'err');
+    }
+    setTplLoading(false);
   };
 
   const msg = (m, t='ok') => { setToast({m,t}); setTimeout(()=>setToast(null), 3000); };
@@ -505,6 +568,72 @@ export default function CRMApp() {
     setCatHierOpen(new Set());
     setSortKey('created_at');
     setSortDir('desc');
+  };
+
+  const openNewTemplate = () => {
+    setEditTpl({
+      id:null,
+      name:'',
+      type:'cold_outreach',
+      subject:'',
+      body:'',
+      language:'da',
+      from_email:'',
+      active:true,
+      category_tags:[],
+    });
+    setTplCats(new Set());
+  };
+
+  const openEditTemplate = (tpl) => {
+    setEditTpl(tpl);
+    setTplCats(new Set(tpl.category_tags||[]));
+  };
+
+  const saveTemplate = async () => {
+    if(!editTpl || !editTpl.name.trim()) return msg('Navn er påkrævet','err');
+    if(!editTpl.subject.trim()) return msg('Subject er påkrævet','err');
+    setSaving(true);
+    try{
+      const payload = {
+        name:editTpl.name.trim(),
+        type:editTpl.type||'cold_outreach',
+        subject:editTpl.subject,
+        body:editTpl.body,
+        language:editTpl.language||'da',
+        from_email:editTpl.from_email||null,
+        active:editTpl.active!==false,
+        category_tags:[...tplCats],
+      };
+      if(editTpl.id){
+        const { data,error } = await supabase.from('email_templates').update(payload).eq('id',editTpl.id).select().single();
+        if(error) throw error;
+        setTemplates(templates.map(t=>t.id===editTpl.id?data:t));
+        setEditTpl(data);
+        msg('Template opdateret');
+      }else{
+        const { data,error } = await supabase.from('email_templates').insert(payload).select().single();
+        if(error) throw error;
+        setTemplates([data,...templates]);
+        setEditTpl(data);
+        msg('Template oprettet');
+      }
+    }catch(e){ msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
+  };
+
+  const deleteTemplate = async (tpl) => {
+    if(!tpl?.id) return;
+    if(!confirm(`Slet template "${tpl.name}"?`)) return;
+    setSaving(true);
+    try{
+      const { error } = await supabase.from('email_templates').delete().eq('id',tpl.id);
+      if(error) throw error;
+      setTemplates(templates.filter(t=>t.id!==tpl.id));
+      if(editTpl && editTpl.id===tpl.id) setEditTpl(null);
+      msg('Template slettet');
+    }catch(e){ msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
   };
 
   const openAdd = () => { setEditLead({...DEFAULT_LEAD}); setView('add'); };
@@ -816,6 +945,7 @@ export default function CRMApp() {
     {id:'dashboard',label:'Dashboard'},
     {id:'list',label:'Leads'},
     {id:'import',label:'Importér'},
+    {id:'templates',label:'Mail templates'},
     {id:'shopify_settings',label:'Shopify'},
     {id:'settings',label:'Indstillinger'},
   ];
@@ -1136,6 +1266,164 @@ export default function CRMApp() {
               2. Udvikl apps → Opret en app<br/>
               3. Admin API scopes: read_orders, read_products<br/>
               4. Installér appen → kopiér Admin API access token
+            </div>
+          </div>
+        )}
+
+        {/* TEMPLATES */}
+        {view==='templates'&&(
+          <div style={{padding:28,display:'flex',gap:20,alignItems:'flex-start'}}>
+            <div style={{flex:1}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                <div>
+                  <h2 style={{fontWeight:700,marginBottom:4}}>Mail templates</h2>
+                  <div style={{fontSize:13,color:'#4b5563'}}>Gem dine standard outbound-mails med tokens og kategorier</div>
+                </div>
+                <button className="btn btn-p" onClick={openNewTemplate}>+ Ny template</button>
+              </div>
+              <div style={{...CC.card,padding:14}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                  <thead>
+                    <tr style={{borderBottom:'1px solid #1f2937'}}>
+                      {['Navn','Type','Sprog','Kategorier','Aktiv','Sidst opdateret',''].map(h=>(
+                        <th key={h} style={{textAlign:'left',padding:'8px 10px',fontSize:11,textTransform:'uppercase',letterSpacing:0.5,color:'#4b5563'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(!templates||templates.length===0)&&(
+                      <tr>
+                        <td colSpan={7} style={{padding:18,fontSize:13,color:'#4b5563'}}>Ingen templates endnu. Klik &ldquo;Ny template&rdquo; for at oprette din første.</td>
+                      </tr>
+                    )}
+                    {templates.map(t=>(
+                      <tr key={t.id} style={{borderBottom:'1px solid #020617',cursor:'pointer',background:editTpl&&editTpl.id===t.id?'#020617':'transparent'}}
+                        onClick={()=>openEditTemplate(t)}>
+                        <td style={{padding:'8px 10px',fontWeight:600}}>{t.name}</td>
+                        <td style={{padding:'8px 10px',color:'#9ca3af'}}>{t.type}</td>
+                        <td style={{padding:'8px 10px',color:'#9ca3af'}}>{t.language?.toUpperCase()}</td>
+                        <td style={{padding:'8px 10px',color:'#6b7280',fontSize:12}}>
+                          {(t.category_tags||[]).length? (t.category_tags||[]).join(', '): 'Global'}
+                        </td>
+                        <td style={{padding:'8px 10px'}}>
+                          <span style={{fontSize:11,padding:'2px 8px',borderRadius:999,background:t.active?'#14532d':'#111827',color:t.active?'#4ade80':'#6b7280',border:'1px solid '+(t.active?'#16a34a55':'#1f2937')}}>
+                            {t.active?'Aktiv':'Arkiveret'}
+                          </span>
+                        </td>
+                        <td style={{padding:'8px 10px',color:'#4b5563',fontSize:12}}>{(t.updated_at||t.created_at||'').slice(0,10)}</td>
+                        <td style={{padding:'8px 6px',textAlign:'right'}}>
+                          <button className="btn btn-d" style={{fontSize:11,padding:'4px 8px'}} onClick={e=>{e.stopPropagation();deleteTemplate(t);}}>Slet</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Editor / preview */}
+            <div style={{width:420,flexShrink:0}}>
+              <div style={{...CC.card,padding:18,marginBottom:14}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <div style={{fontSize:13,fontWeight:600}}>Editor</div>
+                  {editTpl&&<span style={{fontSize:11,color:'#4b5563'}}>ID: {editTpl.id?.slice(0,8)||'ny'}</span>}
+                </div>
+                {!editTpl&&(
+                  <div style={{fontSize:13,color:'#4b5563'}}>Vælg en template i listen til venstre, eller klik &ldquo;Ny template&rdquo;.</div>
+                )}
+                {editTpl&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <div>
+                      <label>Navn</label>
+                      <input className="inp" value={editTpl.name} onChange={e=>setEditTpl({...editTpl,name:e.target.value})}/>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1.1fr 0.9fr',gap:8}}>
+                      <div>
+                        <label>Type</label>
+                        <select className="inp" value={editTpl.type} onChange={e=>setEditTpl({...editTpl,type:e.target.value})}>
+                          <option value="cold_outreach">Cold outreach</option>
+                          <option value="follow_up">Follow-up</option>
+                          <option value="re_engage">Re-engage</option>
+                          <option value="partner_intro">Intro partner</option>
+                          <option value="offer">Tilbud</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>Sprog</label>
+                        <select className="inp" value={editTpl.language} onChange={e=>setEditTpl({...editTpl,language:e.target.value})}>
+                          <option value="da">Dansk</option>
+                          <option value="en">Engelsk</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label>Fra-email (valgfri)</label>
+                      <input className="inp" value={editTpl.from_email||''} onChange={e=>setEditTpl({...editTpl,from_email:e.target.value})} placeholder="f.eks. jeppe@surfmore.dk"/>
+                    </div>
+                    <div>
+                      <label>Knyttet til kategorier (valgfri)</label>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:90,overflowY:'auto',padding:6,borderRadius:8,border:'1px solid #1f2937',background:'#020617'}}>
+                        {allCats.map(c=>{
+                          const sel = tplCats.has(c);
+                          return(
+                            <button key={c} type="button" className="btn" style={{fontSize:11,padding:'3px 8px',background:sel?'#0ea5e933':'transparent',color:sel?'#e5e7eb':'#9ca3af',border:'1px solid '+(sel?'#0ea5e9':'#1f2937')}}
+                              onClick={()=>{const n=new Set(tplCats);sel?n.delete(c):n.add(c);setTplCats(n);}}>
+                              {c}
+                            </button>
+                          );
+                        })}
+                        {!allCats.length&&<span style={{fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <label>Subject</label>
+                      <input className="inp" value={editTpl.subject} onChange={e=>setEditTpl({...editTpl,subject:e.target.value})} placeholder="f.eks. Samarbejde med Surfmore?"/>
+                    </div>
+                    <div>
+                      <label>Body (understøtter {{tokens}})</label>
+                      <textarea className="inp" rows={7} value={editTpl.body} onChange={e=>setEditTpl({...editTpl,body:e.target.value})} style={{resize:'vertical',fontFamily:'monospace',fontSize:12}} placeholder="Hej {{lead.contact_person | default:\"der\"}} ..."/>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
+                      <label style={{display:'flex',alignItems:'center',gap:6}}>
+                        <input type="checkbox" checked={editTpl.active!==false} onChange={e=>setEditTpl({...editTpl,active:e.target.checked})}/>
+                        <span style={{fontSize:12,color:'#9ca3af'}}>Aktiv</span>
+                      </label>
+                      <button className="btn btn-p" style={{fontSize:12,padding:'7px 16px'}} disabled={saving} onClick={saveTemplate}>{saving?'Gemmer...':'Gem template'}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{...CC.card,padding:16}}>
+                <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Preview</div>
+                <div style={{display:'flex',gap:8,marginBottom:8,alignItems:'center'}}>
+                  <select className="inp" style={{fontSize:12}} value={tplPreviewLeadId||''} onChange={e=>setTplPreviewLeadId(e.target.value||null)}>
+                    <option value="">Vælg lead til preview</option>
+                    {leads.slice(0,80).map(l=><option key={l.id} value={l.id}>{l.name||l.email||l.id.slice(0,8)}</option>)}
+                  </select>
+                </div>
+                <div style={{fontSize:11,color:'#6b7280',marginBottom:6}}>Tilgængelige tokens:</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10,fontSize:11}}>
+                  {['{{lead.name}}','{{lead.category}}','{{lead.country}}','{{lead.contact_person | default:"der"}}','{{user.name}}','{{company.name}}','{{lead.notes_last}}'].map(t=>(
+                    <span key={t} style={{padding:'2px 6px',borderRadius:6,background:'#020617',border:'1px solid #1f2937',color:'#9ca3af'}}>{t}</span>
+                  ))}
+                </div>
+                <div style={{borderTop:'1px solid #1f2937',paddingTop:10,fontSize:12}}>
+                  {editTpl?(()=>{
+                    const lead = leads.find(l=>l.id===tplPreviewLeadId) || leads[0] || null;
+                    const subj = renderTemplate(editTpl.subject,lead);
+                    const body = renderTemplate(editTpl.body,lead);
+                    return(
+                      <div>
+                        <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Emne</div>
+                        <div style={{marginBottom:10,color:'#e5e7eb'}}>{subj||'—'}</div>
+                        <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Body</div>
+                        <div style={{whiteSpace:'pre-wrap',color:'#d1d5db',fontFamily:'system-ui,sans-serif',fontSize:13,lineHeight:1.5}}>{body||'—'}</div>
+                      </div>
+                    );
+                  })():<div style={{fontSize:13,color:'#4b5563'}}>Vælg en template for at se preview.</div>}
+                </div>
+              </div>
             </div>
           </div>
         )}

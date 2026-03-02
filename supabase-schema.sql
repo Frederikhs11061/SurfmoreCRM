@@ -55,3 +55,18 @@ DROP TRIGGER IF EXISTS leads_updated_at ON leads;
 CREATE TRIGGER leads_updated_at
   BEFORE UPDATE ON leads
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- Email templates
+CREATE TABLE IF NOT EXISTS email_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  type TEXT NOT NULL DEFAULT 'cold_outreach', -- cold_outreach | follow_up | re_engage | partner_intro | offer
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  language TEXT NOT NULL DEFAULT 'da',        -- da | en
+  from_email TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  category_tags TEXT[] DEFAULT '{}',          -- f.eks. ['Skoler & Klubber (Kajakklub)','Butik & Webshop']
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
