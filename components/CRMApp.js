@@ -1340,7 +1340,7 @@ export default function CRMApp() {
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                 <thead><tr style={{borderBottom:'1px solid #1f2937'}}>
                   {bulk&&<th style={{padding:'10px 8px 10px 14px',width:36}}></th>}
-                  {['Navn','Kategori','Email','By','Status','Outreach','Salg'].map(h=><th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap'}}>{h}</th>)}
+                  {['Navn','Kategori','Email','Land','Status','Outreach','Salg'].map(h=><th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap'}}>{h}</th>)}
                 </tr></thead>
                 <tbody>
                   {!filtered.length&&<tr><td colSpan={bulk?8:7} style={{padding:32,textAlign:'center',color:'#4b5563'}}>Ingen leads fundet. <button className="btn btn-g" onClick={openAdd} style={{marginLeft:8}}>+ Tilføj</button></td></tr>}
@@ -1353,7 +1353,7 @@ export default function CRMApp() {
                       <td style={{padding:'10px 14px',fontWeight:600,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.name}</td>
                       <td style={{padding:'10px 14px'}}><span className="tag">{lead.category}</span></td>
                       <td style={{padding:'10px 14px',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{lead.email?<span style={{color:'#4b5563'}}>{lead.email}</span>:<span style={{color:'#ef4444',fontSize:11,fontWeight:600}}>+ Tilføj email</span>}</td>
-                      <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.city||'—'}</td>
+                      <td style={{padding:'10px 14px',color:'#4b5563',whiteSpace:'nowrap'}}>{lead.country||'—'}</td>
                       <td style={{padding:'10px 14px'}}><StatusBadge value={lead.status}/></td>
                       <td style={{padding:'10px 14px',color:'#6b7280'}}>{(lead.outreaches||[]).length?<span style={{fontSize:12,lineHeight:1.6}}>{lead.outreaches.length}x{lead.outreaches.map(o=>o.date).filter(Boolean).map(d=><span key={d} style={{display:'block',fontSize:11,color:'#4b5563'}}>{fmtDate(d)}</span>)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
                       <td style={{padding:'10px 14px'}}>{lead.sale_info?<span style={{color:'#4ade80',fontSize:12,fontWeight:600}}>{lead.sale_info.slice(0,32)}</span>:<span style={{color:'#1f2937'}}>—</span>}</td>
