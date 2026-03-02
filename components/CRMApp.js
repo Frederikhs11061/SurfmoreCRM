@@ -115,6 +115,19 @@ function buildCategoryDisplay(kategori, underkategori, defaultCat) {
   return sub ? `${cat} (${sub})` : cat;
 }
 
+// Parse notes stored as JSON string in leads.notes
+function parseLeadNotes(raw) {
+  if (!raw) return [];
+  try {
+    const val = JSON.parse(raw);
+    if (Array.isArray(val)) return val;
+  } catch(e) {
+    // fallback below
+  }
+  // Legacy plain-text notes
+  return [{ id:'legacy', title:'Note', text:String(raw), created_at:null }];
+}
+
 // Build column index map from header row (case-insensitive)
 // All columns named "B2B Outreach" (with or without number) are collected in otrCols[]
 function buildColMap(headerRow) {
@@ -333,7 +346,8 @@ export default function CRMApp() {
   const [bulkBy, setBulkBy] = useState('Jeppe');
   const [bulkNote, setBulkNote] = useState('');
   const [bulkSale, setBulkSale] = useState('');
-  const [detailNotes, setDetailNotes] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteBody, setNoteBody] = useState('');
   const [shopDomain, setShopDomain] = useState('');
   const [shopToken, setShopToken] = useState('');
   const [shopOrders, setShopOrders] = useState([]);
@@ -348,11 +362,6 @@ export default function CRMApp() {
   useEffect(()=>{
     loadLeads();
   },[]);
-
-  // Sync detail notes draft when selected lead changes
-  useEffect(()=>{
-    if(sel) setDetailNotes(sel.notes || '');
-  },[sel]);
 
   const loadLeads = async () => {
     setLoading(true);
@@ -409,6 +418,8 @@ export default function CRMApp() {
     nc:leads.filter(l=>l.status==='not_contacted').length,
   };
 
+  const notesList = sel ? parseLeadNotes(sel.notes) : [];
+
   const runP = txt => {
     if(!txt.trim()) return [];
     const sep = detectSeparator(txt);
@@ -450,12 +461,38 @@ export default function CRMApp() {
     return Object.values(parents).sort((a,b)=>a.name.localeCompare(b.name));
   })();
 
+  const [sortKey, setSortKey] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc'); // 'asc' | 'desc'
+
   const filtered = leads.filter(l=>{
     if(fCats.size > 0 && !fCats.has(l.category)) return false;
     if(fStatus!=='Alle'&&l.status!==fStatus)return false;
     if(fCountry!=='Alle'&&l.country!==fCountry)return false;
     if(search){const q=search.toLowerCase();if(!l.name.toLowerCase().includes(q)&&!(l.email||'').toLowerCase().includes(q))return false;}
     return true;
+  });
+
+  const sorted = [...filtered].sort((a,b)=>{
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const getVal = (lead) => {
+      switch(sortKey){
+        case 'name': return (lead.name||'').toLowerCase();
+        case 'category': return (lead.category||'').toLowerCase();
+        case 'email': return (lead.email||'').toLowerCase();
+        case 'country': return (lead.country||'').toLowerCase();
+        case 'status': return (lead.status||'').toLowerCase();
+        case 'outreach': return (lead.outreaches||[]).length;
+        case 'sale': return (lead.sale_info||'').toLowerCase();
+        case 'created_at':
+        default: return lead.created_at || '';
+      }
+    };
+    const va = getVal(a);
+    const vb = getVal(b);
+    if(typeof va === 'number' && typeof vb === 'number') return (va-vb)*dir;
+    if(va<vb) return -1*dir;
+    if(va>vb) return 1*dir;
+    return 0;
   });
 
   const openAdd = () => { setEditLead({...DEFAULT_LEAD}); setView('add'); };
@@ -560,16 +597,28 @@ export default function CRMApp() {
     setSaving(false);
   };
 
-  const saveDetailNotes = async lead => {
+  const addDetailNote = async lead => {
     if (!lead) return;
+    if (!noteTitle.trim() && !noteBody.trim()) return msg('Skriv mindst titel eller tekst','err');
     setSaving(true);
     try {
-      const { error } = await supabase.from('leads').update({ notes: detailNotes }).eq('id', lead.id);
+      const existing = parseLeadNotes(lead.notes);
+      const now = new Date().toISOString();
+      const note = {
+        id: 'n_'+now+'_'+Math.random().toString(36).slice(2,8),
+        title: noteTitle.trim() || 'Note',
+        text: noteBody.trim(),
+        created_at: now,
+      };
+      const next = [...existing, note];
+      const raw = JSON.stringify(next);
+      const { error } = await supabase.from('leads').update({ notes: raw }).eq('id', lead.id);
       if (error) throw error;
-      const updated = { ...lead, notes: detailNotes };
+      const updated = { ...lead, notes: raw };
       setLeads(leads.map(l => l.id === lead.id ? updated : l));
       setSel(updated);
-      msg('Noter gemt');
+      setNoteTitle(''); setNoteBody('');
+      msg('Note tilføjet');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
     setSaving(false);
   };
@@ -1212,24 +1261,39 @@ export default function CRMApp() {
               </div>
             )}
             <div style={{...CC.card,padding:20,marginBottom:12}}>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-                {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person]].map(([lb,v])=>(
-                  <div key={lb}><div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div><div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>{v||'—'}</div></div>
-                ))}
-              </div>
-              {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
-              {sel.sale_info&&(
-                <div style={{background:'#14532d15',border:'1px solid #14532d30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#4ade80',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
-                  <span>Salg: {sel.sale_info}</span>
-                  <button className="btn btn-g" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>clearSale(sel)}>Fjern salg</button>
+              <div style={{display:'grid',gridTemplateColumns:'minmax(0,2fr) minmax(0,1.6fr)',gap:18}}>
+                <div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+                    {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person]].map(([lb,v])=>(
+                      <div key={lb}><div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div><div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>{v||'—'}</div></div>
+                    ))}
+                  </div>
+                  {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
+                  {sel.sale_info&&(
+                    <div style={{background:'#14532d15',border:'1px solid #14532d30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#4ade80',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                      <span>Salg: {sel.sale_info}</span>
+                      <button className="btn btn-g" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>clearSale(sel)}>Fjern salg</button>
+                    </div>
+                  )}
                 </div>
-              )}
-              <div style={{marginTop:8}}>
-                <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Ekstra info / noter</div>
-                <textarea className="inp" rows={3} value={detailNotes} onChange={e=>setDetailNotes(e.target.value)} style={{resize:'vertical'}} placeholder="Skriv evt. ekstra info om leadet her"/>
-                <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',gap:6}}>
-                  <button className="btn btn-g" style={{fontSize:11,padding:'5px 10px'}} onClick={()=>setDetailNotes(sel.notes||'')}>Fortryd</button>
-                  <button className="btn btn-p" style={{fontSize:11,padding:'5px 12px'}} disabled={saving} onClick={()=>saveDetailNotes(sel)}>{saving?'Gemmer...':'Gem noter'}</button>
+                <div>
+                  <div style={{fontSize:11,color:'#4b5563',marginBottom:6}}>Noter</div>
+                  <div style={{maxHeight:140,overflowY:'auto',border:'1px solid #1f2937',borderRadius:8,marginBottom:8,background:'#080d18'}}>
+                    {notesList.length===0&&<div style={{fontSize:12,color:'#4b5563',padding:'8px 10px'}}>Ingen noter endnu</div>}
+                    {notesList.map(n=>(
+                      <div key={n.id} style={{padding:'8px 10px',borderBottom:'1px solid #020617'}}>
+                        <div style={{fontSize:12,fontWeight:600,color:'#e5e7eb',marginBottom:2}}>{n.title||'Note'}</div>
+                        {n.created_at&&<div style={{fontSize:10,color:'#6b7280',marginBottom:2}}>{fmtDate((n.created_at||'').slice(0,10))}</div>}
+                        {n.text&&<div style={{fontSize:12,color:'#9ca3af',whiteSpace:'pre-line'}}>{n.text}</div>}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Tilføj note</div>
+                  <input className="inp" style={{marginBottom:6,fontSize:13}} placeholder="Titel (f.eks. Telefonnotat)" value={noteTitle} onChange={e=>setNoteTitle(e.target.value)}/>
+                  <textarea className="inp" rows={3} value={noteBody} onChange={e=>setNoteBody(e.target.value)} style={{resize:'vertical',fontSize:13}} placeholder="Skriv ekstra info om leadet her"/>
+                  <div style={{marginTop:6,display:'flex',justifyContent:'flex-end'}}>
+                    <button className="btn btn-p" style={{fontSize:11,padding:'5px 12px'}} disabled={saving} onClick={()=>addDetailNote(sel)}>{saving?'Gemmer...':'Gem note'}</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1387,7 +1451,10 @@ export default function CRMApp() {
               </div>
 
               <select className="inp" style={{maxWidth:155}} value={fStatus} onChange={e=>setFStatus(e.target.value)}><option value="Alle">Alle statusser</option>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select>
-              <select className="inp" style={{maxWidth:120}} value={fCountry} onChange={e=>setFCountry(e.target.value)}><option value="Alle">Alle lande</option>{COUNTRIES.map(c=><option key={c}>{c}</option>)}</select>
+              <select className="inp" style={{maxWidth:140}} value={fCountry} onChange={e=>setFCountry(e.target.value)}>
+                <option value="Alle">Alle lande</option>
+                {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
               <span style={{fontSize:13,color:'#4b5563',marginLeft:'auto'}}>{filtered.length} leads</span>
             </div>
 
@@ -1395,11 +1462,25 @@ export default function CRMApp() {
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                 <thead><tr style={{borderBottom:'1px solid #1f2937'}}>
                   {bulk&&<th style={{padding:'10px 8px 10px 14px',width:36}}></th>}
-                  {['Navn','Kategori','Email','Land','Status','Outreach','Salg'].map(h=><th key={h} style={{padding:'10px 14px',textAlign:'left',color:'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap'}}>{h}</th>)}
+                  {[
+                    {label:'Navn',key:'name'},
+                    {label:'Kategori',key:'category'},
+                    {label:'Email',key:'email'},
+                    {label:'Land',key:'country'},
+                    {label:'Status',key:'status'},
+                    {label:'Outreach',key:'outreach'},
+                    {label:'Salg',key:'sale'},
+                  ].map(col=>(
+                    <th key={col.key} style={{padding:'10px 14px',textAlign:'left',color:'#4b5563',fontWeight:700,fontSize:11,textTransform:'uppercase',letterSpacing:0.4,whiteSpace:'nowrap',cursor:'pointer'}}
+                      onClick={()=>{setSortKey(k=>k===col.key?(k===sortKey&&sortDir==='asc'?'name':col.key):col.key);setSortDir(d=>sortKey===col.key?(d==='asc'?'desc':'asc'):'asc');}}>
+                      <span>{col.label}</span>
+                      {sortKey===col.key&&<span style={{marginLeft:4,fontSize:10}}>{sortDir==='asc'?'▲':'▼'}</span>}
+                    </th>
+                  ))}
                 </tr></thead>
                 <tbody>
-                  {!filtered.length&&<tr><td colSpan={bulk?8:7} style={{padding:32,textAlign:'center',color:'#4b5563'}}>Ingen leads fundet. <button className="btn btn-g" onClick={openAdd} style={{marginLeft:8}}>+ Tilføj</button></td></tr>}
-                  {filtered.map(lead=>(
+                  {!sorted.length&&<tr><td colSpan={bulk?8:7} style={{padding:32,textAlign:'center',color:'#4b5563'}}>Ingen leads fundet. <button className="btn btn-g" onClick={openAdd} style={{marginLeft:8}}>+ Tilføj</button></td></tr>}
+                  {sorted.map(lead=>(
                     <tr key={lead.id} className={bulk?'':'rh'} style={{borderBottom:'1px solid #0d1420',background:bulkSel.has(lead.id)?'#7c3aed10':'transparent',cursor:bulk?'default':'pointer'}}
                       onClick={()=>{if(!bulk){setSel(lead);setView('detail');}}}>
                       {bulk&&<td style={{padding:'10px 8px 10px 14px'}} onClick={e=>{e.stopPropagation();const n=new Set(bulkSel);n.has(lead.id)?n.delete(lead.id):n.add(lead.id);setBulkSel(n);}}>
