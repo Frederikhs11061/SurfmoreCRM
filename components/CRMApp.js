@@ -1380,8 +1380,15 @@ export default function CRMApp() {
                       <input className="inp" value={editTpl.subject} onChange={e=>setEditTpl({...editTpl,subject:e.target.value})} placeholder="f.eks. Samarbejde med Surfmore?"/>
                     </div>
                     <div>
-                      <label>Body (understøtter {{tokens}})</label>
-                      <textarea className="inp" rows={7} value={editTpl.body} onChange={e=>setEditTpl({...editTpl,body:e.target.value})} style={{resize:'vertical',fontFamily:'monospace',fontSize:12}} placeholder="Hej {{lead.contact_person | default:\"der\"}} ..."/>
+                      <label>Body (understøtter &#123;&#123;tokens&#125;&#125;)</label>
+                      <textarea
+                        className="inp"
+                        rows={7}
+                        value={editTpl.body}
+                        onChange={e=>setEditTpl({...editTpl,body:e.target.value})}
+                        style={{resize:'vertical',fontFamily:'monospace',fontSize:12}}
+                        placeholder={'Hej {{lead.contact_person | default:"der"}} ...'}
+                      />
                     </div>
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:4}}>
                       <label style={{display:'flex',alignItems:'center',gap:6}}>
