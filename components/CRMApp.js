@@ -1393,7 +1393,7 @@ export default function CRMApp() {
                     </div>
                     <div>
                       <label>Knyttet til kategorier (valgfri)</label>
-                      <div style={{position:'relative'}}>
+                      <div style={{position:'relative',marginBottom:6}}>
                         <button type="button" className="btn btn-g" style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',fontSize:13}}
                           onClick={()=>setTplCatOpen(o=>!o)}>
                           <span style={{color:tplCats.size?'#e5e7eb':'#6b7280'}}>
@@ -1442,8 +1442,18 @@ export default function CRMApp() {
                                             </button>
                                           );
                                         })}
-                                      </div>
-                                    )}
+                          </div>
+                        )}
+                      </div>
+                      {(tplCats.size>0)&&(
+                        <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:72,overflowY:'auto'}}>
+                          {[...tplCats].map(tag=>(
+                            <span key={tag} style={{padding:'3px 8px',borderRadius:999,background:'#020617',border:'1px solid #1f2937',fontSize:11,color:'#e5e7eb',maxWidth:200,whiteSpace:'nowrap',textOverflow:'ellipsis',overflow:'hidden'}}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                                   </div>
                                 );
                               })}
@@ -1848,7 +1858,7 @@ export default function CRMApp() {
                 <option value="Alle">Alle lande</option>
                 {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
               </select>
-              <button className="btn btn-g" style={{fontSize:12,padding:'7px 12px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
+              <button className="btn btn-v" style={{fontSize:12,padding:'7px 16px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
               <span style={{fontSize:13,color:'#4b5563'}}>{filtered.length} leads</span>
             </div>
 
