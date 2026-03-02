@@ -1440,8 +1440,19 @@ export default function CRMApp() {
                                               <span>{subLabel}</span>
                                               {sel&&<span style={{fontSize:11}}>✓</span>}
                                             </button>
-                                          );
-                                        })}
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                              {!allCats.length&&<div style={{padding:'8px 10px',fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</div>}
+                            </div>
+                            <div style={{padding:'6px 8px',borderTop:'1px solid #1f2937',display:'flex',gap:6}}>
+                              <input className="inp" style={{flex:1,padding:'7px 9px',fontSize:12,background:'#020617',borderColor:'#2563eb'}} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e=>setTplCatCustom(e.target.value)}/>
+                              <button className="btn btn-p" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>{if(!tplCatCustom.trim())return;const n=new Set(tplCats);n.add(tplCatCustom.trim());setTplCats(n);setTplCatCustom('');}}>Tilføj</button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1454,18 +1465,6 @@ export default function CRMApp() {
                           ))}
                         </div>
                       )}
-                                  </div>
-                                );
-                              })}
-                              {!allCats.length&&<div style={{padding:'8px 10px',fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</div>}
-                            </div>
-                            <div style={{padding:'6px 8px',borderTop:'1px solid #1f2937',display:'flex',gap:6}}>
-                              <input className="inp" style={{flex:1,padding:'7px 9px',fontSize:12,background:'#020617',borderColor:'#2563eb'}} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e=>setTplCatCustom(e.target.value)}/>
-                              <button className="btn btn-p" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>{if(!tplCatCustom.trim())return;const n=new Set(tplCats);n.add(tplCatCustom.trim());setTplCats(n);setTplCatCustom('');}}>Tilføj</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     </div>
                     <div>
                       <label>Subject</label>
