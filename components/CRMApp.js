@@ -1785,7 +1785,6 @@ export default function CRMApp() {
                   <div><label>Outreach besked</label><input className="inp" style={{width:180}} value={bulkNote} onChange={e=>setBulkNote(e.target.value)} placeholder="f.eks. Email sendt"/></div>
                   <div><label>Salg <span style={{color:'#22c55e',fontSize:10}}>(sætter automatisk → Solgt)</span></label><input className="inp" style={{width:180}} value={bulkSale} onChange={e=>setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke"/></div>
                   <button className="btn" style={{background:'#7c3aed',color:'#fff',padding:'8px 16px',alignSelf:'flex-end'}} disabled={saving} onClick={applyBulk}>{saving?'Gemmer...':'Anvend på '+bulkSel.size}</button>
-                  <button className="btn btn-g" style={{padding:'8px 14px',alignSelf:'flex-end',fontSize:13}} disabled={saving||bulkSel.size===0} onClick={copyEmailsBulk}>Kopier emails ({bulkSel.size})</button>
                   <button className="btn btn-d" style={{padding:'8px 16px',alignSelf:'flex-end',fontSize:13}} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
                 </div>
               </div>
@@ -1857,7 +1856,10 @@ export default function CRMApp() {
                 <option value="Alle">Alle lande</option>
                 {[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}>{c}</option>)}
               </select>
-              <button className="btn btn-v" style={{fontSize:12,padding:'7px 16px',marginLeft:'auto'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
+              <button className="btn btn-g" style={{fontSize:12,padding:'7px 14px',marginLeft:'auto'}} disabled={bulkSel.size===0} onClick={copyEmailsBulk}>
+                Kopier emails ({bulkSel.size})
+              </button>
+              <button className="btn btn-v" style={{fontSize:12,padding:'7px 16px'}} onClick={resetFiltersAndSort}>Nulstil filtre</button>
               <span style={{fontSize:13,color:'#4b5563'}}>{filtered.length} leads</span>
             </div>
 
