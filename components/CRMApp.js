@@ -1069,7 +1069,7 @@ export default function CRMApp() {
               {[
                 {l:'Totale leads',v:stats.total,c:'#6366f1',sub:'i databasen',click:()=>setView('list')},
                 {l:'Ikke kontaktet',v:stats.nc,c:'#64748b',sub:'klar til outreach',click:()=>{setFStatus('not_contacted');setView('list');}},
-                {l:'Outreach sendt',v:stats.out,c:'#3b82f6',sub:'afventer svar',click:()=>{setFStatus('outreach_done');setView('list');}},
+                {l:'Outreach sendt',v:stats.out,c:'#3b82f6',sub:'afventer salg',click:()=>{setFStatus('outreach_done');setView('list');}},
                 {l:'Solgt',v:stats.won,c:'#22c55e',sub:'konverterede leads',click:()=>{setFStatus('won');setView('list');}},
               ].map(s=>(
                 <div key={s.l} style={{...CC.card,padding:'18px 20px',cursor:'pointer'}} onClick={s.click}>
