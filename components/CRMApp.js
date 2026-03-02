@@ -333,6 +333,7 @@ export default function CRMApp() {
   const [bulkBy, setBulkBy] = useState('Jeppe');
   const [bulkNote, setBulkNote] = useState('');
   const [bulkSale, setBulkSale] = useState('');
+  const [detailNotes, setDetailNotes] = useState('');
   const [shopDomain, setShopDomain] = useState('');
   const [shopToken, setShopToken] = useState('');
   const [shopOrders, setShopOrders] = useState([]);
@@ -347,6 +348,11 @@ export default function CRMApp() {
   useEffect(()=>{
     loadLeads();
   },[]);
+
+  // Sync detail notes draft when selected lead changes
+  useEffect(()=>{
+    if(sel) setDetailNotes(sel.notes || '');
+  },[sel]);
 
   const loadLeads = async () => {
     setLoading(true);
@@ -529,6 +535,43 @@ export default function CRMApp() {
       setLeads(leads.map(l=>l.id===lead.id?updated:l));
       setSel(updated); setEditOtrId(null); setEditOtr(null); msg('Opdateret');
     } catch(e) { msg('Fejl: '+e.message,'err'); }
+  };
+
+  const clearSale = async lead => {
+    if (!lead) return;
+    if (!lead.sale_info && lead.status !== 'won') return;
+    if (!confirm('Fjern salg fra dette lead?')) return;
+    setSaving(true);
+    try {
+      let newStatus = lead.status;
+      if (lead.status === 'won') {
+        newStatus = (lead.outreaches && lead.outreaches.length > 0) ? 'outreach_done' : 'not_contacted';
+      }
+      // Clear sale on lead and all related outreaches
+      const { error } = await supabase.from('leads').update({ sale_info:'', status:newStatus }).eq('id', lead.id);
+      if (error) throw error;
+      await supabase.from('outreaches').update({ sale_info:'' }).eq('lead_id', lead.id);
+      const updatedOtrs = (lead.outreaches || []).map(o => ({ ...o, sale_info:'' }));
+      const updated = { ...lead, sale_info:'', status:newStatus, outreaches: updatedOtrs };
+      setLeads(leads.map(l => l.id === lead.id ? updated : l));
+      setSel(updated);
+      msg('Salg fjernet');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
+  };
+
+  const saveDetailNotes = async lead => {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('leads').update({ notes: detailNotes }).eq('id', lead.id);
+      if (error) throw error;
+      const updated = { ...lead, notes: detailNotes };
+      setLeads(leads.map(l => l.id === lead.id ? updated : l));
+      setSel(updated);
+      msg('Noter gemt');
+    } catch(e) { msg('Fejl: '+e.message,'err'); }
+    setSaving(false);
   };
 
   const delOtr = async (lead,id) => {
@@ -1175,8 +1218,20 @@ export default function CRMApp() {
                 ))}
               </div>
               {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
-              {sel.sale_info&&<div style={{background:'#14532d15',border:'1px solid #14532d30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#4ade80',marginBottom:8}}>Salg: {sel.sale_info}</div>}
-              {sel.notes&&<div style={{fontSize:13,color:'#6b7280',background:'#080d18',borderRadius:8,padding:'8px 12px',whiteSpace:'pre-line'}}>{sel.notes}</div>}
+              {sel.sale_info&&(
+                <div style={{background:'#14532d15',border:'1px solid #14532d30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#4ade80',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                  <span>Salg: {sel.sale_info}</span>
+                  <button className="btn btn-g" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>clearSale(sel)}>Fjern salg</button>
+                </div>
+              )}
+              <div style={{marginTop:8}}>
+                <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Ekstra info / noter</div>
+                <textarea className="inp" rows={3} value={detailNotes} onChange={e=>setDetailNotes(e.target.value)} style={{resize:'vertical'}} placeholder="Skriv evt. ekstra info om leadet her"/>
+                <div style={{marginTop:6,display:'flex',justifyContent:'flex-end',gap:6}}>
+                  <button className="btn btn-g" style={{fontSize:11,padding:'5px 10px'}} onClick={()=>setDetailNotes(sel.notes||'')}>Fortryd</button>
+                  <button className="btn btn-p" style={{fontSize:11,padding:'5px 12px'}} disabled={saving} onClick={()=>saveDetailNotes(sel)}>{saving?'Gemmer...':'Gem noter'}</button>
+                </div>
+              </div>
             </div>
             <div style={{...CC.card,padding:18,marginBottom:12}}>
               <div className="sl">Status</div>
