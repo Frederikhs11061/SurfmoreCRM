@@ -377,6 +377,7 @@ export default function CRMApp() {
   const [fCats, setFCats] = useState(new Set());
   const [fStatus, setFStatus] = useState('Alle');
   const [fCountry, setFCountry] = useState('Alle');
+  const [fMissingEmail, setFMissingEmail] = useState(false);
   const [catOpen, setCatOpen] = useState(false);
   const [catSearch, setCatSearch] = useState('');
   const [catHierOpen, setCatHierOpen] = useState(new Set());
@@ -534,6 +535,7 @@ export default function CRMApp() {
     if(fCats.size > 0 && !fCats.has(l.category)) return false;
     if(fStatus!=='Alle'&&l.status!==fStatus)return false;
     if(fCountry!=='Alle'&&l.country!==fCountry)return false;
+    if(fMissingEmail && l.email) return false;
     if(search){const q=search.toLowerCase();if(!l.name.toLowerCase().includes(q)&&!(l.email||'').toLowerCase().includes(q))return false;}
     return true;
   });
@@ -566,6 +568,7 @@ export default function CRMApp() {
     setFCats(new Set());
     setFStatus('Alle');
     setFCountry('Alle');
+    setFMissingEmail(false);
     setCatOpen(false);
     setCatSearch('');
     setCatHierOpen(new Set());
@@ -1106,9 +1109,13 @@ export default function CRMApp() {
                     Total outreaches: <span style={{color:'#e2e8f0',fontWeight:600}}>{leads.reduce((s,l)=>s+(l.outreaches||[]).length,0)}</span>
                   </div>
                   {noEmail>0&&(
-                    <div style={{fontSize:12,cursor:'pointer',color:'#ef4444'}} onClick={()=>{setFStatus('Alle');setView('list');}}>
+                    <button
+                      className="btn btn-g"
+                      style={{fontSize:12,padding:'4px 10px',borderColor:'#ef444430',color:'#ef4444',background:'#111827'}}
+                      onClick={()=>{resetFiltersAndSort();setFMissingEmail(true);setView('list');}}
+                    >
                       {noEmail} leads uden email →
-                    </div>
+                    </button>
                   )}
                 </div>
               </div>
@@ -1202,7 +1209,7 @@ export default function CRMApp() {
                       <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={openAdd}>+ Tilføj nyt lead manuelt</button>
                       <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={()=>setView('import')}>↑ Importér leads fra CSV</button>
                       <button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12}} onClick={()=>setView('shopify_settings')}>⚡ Tilslut Shopify</button>
-                      {noEmail>0&&<button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12,color:'#ef4444',borderColor:'#ef444430'}} onClick={()=>setView('list')}>{noEmail} leads mangler email →</button>}
+                      {noEmail>0&&<button className="btn btn-g" style={{textAlign:'left',justifyContent:'flex-start',fontSize:12,color:'#ef4444',borderColor:'#ef444430'}} onClick={()=>{resetFiltersAndSort();setFMissingEmail(true);setView('list');}}>{noEmail} leads mangler email →</button>}
                     </div>
                   </>
                 )}
