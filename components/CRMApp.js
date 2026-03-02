@@ -1272,8 +1272,8 @@ export default function CRMApp() {
 
         {/* TEMPLATES */}
         {view==='templates'&&(
-          <div style={{padding:28,display:'flex',gap:20,alignItems:'flex-start'}}>
-            <div style={{flex:1}}>
+          <div style={{padding:28,display:'grid',gridTemplateColumns:'minmax(0,1.4fr) minmax(0,1fr)',gap:20,alignItems:'flex-start'}}>
+            <div style={{minWidth:0}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
                 <div>
                   <h2 style={{fontWeight:700,marginBottom:4}}>Mail templates</h2>
@@ -1322,7 +1322,7 @@ export default function CRMApp() {
             </div>
 
             {/* Editor / preview */}
-            <div style={{width:420,flexShrink:0}}>
+            <div style={{minWidth:0}}>
               <div style={{...CC.card,padding:18,marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                   <div style={{fontSize:13,fontWeight:600}}>Editor</div>
@@ -1362,17 +1362,35 @@ export default function CRMApp() {
                     </div>
                     <div>
                       <label>Knyttet til kategorier (valgfri)</label>
-                      <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:90,overflowY:'auto',padding:6,borderRadius:8,border:'1px solid #1f2937',background:'#020617'}}>
-                        {allCats.map(c=>{
-                          const sel = tplCats.has(c);
-                          return(
-                            <button key={c} type="button" className="btn" style={{fontSize:11,padding:'3px 8px',background:sel?'#0ea5e933':'transparent',color:sel?'#e5e7eb':'#9ca3af',border:'1px solid '+(sel?'#0ea5e9':'#1f2937')}}
-                              onClick={()=>{const n=new Set(tplCats);sel?n.delete(c):n.add(c);setTplCats(n);}}>
-                              {c}
-                            </button>
-                          );
-                        })}
-                        {!allCats.length&&<span style={{fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</span>}
+                      <div style={{position:'relative'}}>
+                        <button type="button" className="btn btn-g" style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',fontSize:13}}
+                          onClick={()=>setCatOpen(o=>!o)}>
+                          <span style={{color:tplCats.size?'#e5e7eb':'#6b7280'}}>
+                            {tplCats.size?`${tplCats.size} valgt`:'Alle kategorier (global)'}
+                          </span>
+                          <span style={{fontSize:10}}>{catOpen?'▲':'▼'}</span>
+                        </button>
+                        {catOpen&&(
+                          <div style={{position:'absolute',zIndex:300,top:'calc(100% + 4px)',left:0,right:0,background:'#020617',border:'1px solid #1f2937',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,0.6)',maxHeight:260,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+                            <div style={{padding:'6px 8px',borderBottom:'1px solid #1f2937',display:'flex',gap:6}}>
+                              <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Søg kategori..." value={catSearch} onChange={e=>setCatSearch(e.target.value)}/>
+                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>{setTplCats(new Set());setCatSearch('');}}>Ryd</button>
+                            </div>
+                            <div style={{padding:'4px 0',overflowY:'auto'}}>
+                              {allCats.filter(c=>!catSearch||c.toLowerCase().includes(catSearch.toLowerCase())).map(c=>{
+                                const sel = tplCats.has(c);
+                                return(
+                                  <button key={c} type="button" style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',background:sel?'#0ea5e910':'transparent',border:'none',color:sel?'#e5e7eb':'#9ca3af',fontSize:13,cursor:'pointer'}}
+                                    onClick={()=>{const n=new Set(tplCats);sel?n.delete(c):n.add(c);setTplCats(n);}}>
+                                    <span>{c}</span>
+                                    {sel&&<span style={{fontSize:11}}>✓</span>}
+                                  </button>
+                                );
+                              })}
+                              {!allCats.length&&<div style={{padding:'8px 10px',fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</div>}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div>
@@ -1417,13 +1435,17 @@ export default function CRMApp() {
                 </div>
                 <div style={{borderTop:'1px solid #1f2937',paddingTop:10,fontSize:12}}>
                   {editTpl?(()=>{
-                    const lead = leads.find(l=>l.id===tplPreviewLeadId) || leads[0] || null;
+                    const lead = tplPreviewLeadId ? leads.find(l=>l.id===tplPreviewLeadId) : null;
+                    if(!lead){
+                      return <div style={{fontSize:13,color:'#4b5563'}}>Vælg et lead ovenfor for at se hvordan subject og body ser ud med rigtige data.</div>;
+                    }
                     const subj = renderTemplate(editTpl.subject,lead);
                     const body = renderTemplate(editTpl.body,lead);
                     return(
-                      <div>
+                      <div style={{border:'1px solid #1f2937',borderRadius:10,background:'#020617',padding:'10px 12px'}}>
+                        <div style={{fontSize:11,color:'#6b7280',marginBottom:2}}>Til: {lead.email||'ingen email'}</div>
                         <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Emne</div>
-                        <div style={{marginBottom:10,color:'#e5e7eb'}}>{subj||'—'}</div>
+                        <div style={{marginBottom:10,color:'#e5e7eb',fontWeight:600}}>{subj||'—'}</div>
                         <div style={{fontSize:11,color:'#4b5563',marginBottom:4}}>Body</div>
                         <div style={{whiteSpace:'pre-wrap',color:'#d1d5db',fontFamily:'system-ui,sans-serif',fontSize:13,lineHeight:1.5}}>{body||'—'}</div>
                       </div>
