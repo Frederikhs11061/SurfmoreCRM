@@ -380,6 +380,8 @@ export default function CRMApp() {
   const [catOpen, setCatOpen] = useState(false);
   const [catSearch, setCatSearch] = useState('');
   const [catHierOpen, setCatHierOpen] = useState(new Set());
+  const [tplCatOpen, setTplCatOpen] = useState(false);
+  const [tplCatSearch, setTplCatSearch] = useState('');
   const [settingsRename, setSettingsRename] = useState({});
   const [newOtr, setNewOtr] = useState({...DEFAULT_OTR});
   const [editOtrId, setEditOtrId] = useState(null);
@@ -395,6 +397,7 @@ export default function CRMApp() {
   const [bulkSale, setBulkSale] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteBody, setNoteBody] = useState('');
+  const [tplCatCustom, setTplCatCustom] = useState('');
   const [shopDomain, setShopDomain] = useState('');
   const [shopToken, setShopToken] = useState('');
   const [shopOrders, setShopOrders] = useState([]);
@@ -1272,8 +1275,8 @@ export default function CRMApp() {
 
         {/* TEMPLATES */}
         {view==='templates'&&(
-          <div style={{padding:28,display:'grid',gridTemplateColumns:'minmax(0,1.4fr) minmax(0,1fr)',gap:20,alignItems:'flex-start'}}>
-            <div style={{minWidth:0}}>
+          <div style={{padding:28,position:'relative'}}>
+            <div style={{minWidth:0,maxWidth:720}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
                 <div>
                   <h2 style={{fontWeight:700,marginBottom:4}}>Mail templates</h2>
@@ -1321,8 +1324,10 @@ export default function CRMApp() {
               </div>
             </div>
 
-            {/* Editor / preview */}
-            <div style={{minWidth:0}}>
+            {/* Editor / preview modal */}
+            {editTpl&&(
+              <div style={{position:'fixed',inset:0,zIndex:400,background:'rgba(0,0,0,0.6)',display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+                <div style={{width:'100%',maxWidth:980,maxHeight:'90vh',overflow:'auto',display:'grid',gridTemplateColumns:'minmax(0,1.3fr) minmax(0,1fr)',gap:18,background:'#020617',border:'1px solid #1f2937',borderRadius:16,boxShadow:'0 20px 60px rgba(0,0,0,0.8)',padding:20}}>
               <div style={{...CC.card,padding:18,marginBottom:14}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                   <div style={{fontSize:13,fontWeight:600}}>Editor</div>
@@ -1364,30 +1369,61 @@ export default function CRMApp() {
                       <label>Knyttet til kategorier (valgfri)</label>
                       <div style={{position:'relative'}}>
                         <button type="button" className="btn btn-g" style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',fontSize:13}}
-                          onClick={()=>setCatOpen(o=>!o)}>
+                          onClick={()=>setTplCatOpen(o=>!o)}>
                           <span style={{color:tplCats.size?'#e5e7eb':'#6b7280'}}>
                             {tplCats.size?`${tplCats.size} valgt`:'Alle kategorier (global)'}
                           </span>
-                          <span style={{fontSize:10}}>{catOpen?'▲':'▼'}</span>
+                          <span style={{fontSize:10}}>{tplCatOpen?'▲':'▼'}</span>
                         </button>
-                        {catOpen&&(
+                        {tplCatOpen&&(
                           <div style={{position:'absolute',zIndex:300,top:'calc(100% + 4px)',left:0,right:0,background:'#020617',border:'1px solid #1f2937',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,0.6)',maxHeight:260,overflow:'hidden',display:'flex',flexDirection:'column'}}>
                             <div style={{padding:'6px 8px',borderBottom:'1px solid #1f2937',display:'flex',gap:6}}>
-                              <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Søg kategori..." value={catSearch} onChange={e=>setCatSearch(e.target.value)}/>
-                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>{setTplCats(new Set());setCatSearch('');}}>Ryd</button>
+                              <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Søg kategori..." value={tplCatSearch} onChange={e=>setTplCatSearch(e.target.value)}/>
+                              <button className="btn btn-g" style={{fontSize:11,padding:'3px 8px'}} onClick={()=>{setTplCats(new Set());setTplCatSearch('');}}>Ryd</button>
                             </div>
                             <div style={{padding:'4px 0',overflowY:'auto'}}>
-                              {allCats.filter(c=>!catSearch||c.toLowerCase().includes(catSearch.toLowerCase())).map(c=>{
-                                const sel = tplCats.has(c);
+                              {catHierarchy.filter(parent=>{
+                                if(!tplCatSearch) return true;
+                                const q=tplCatSearch.toLowerCase();
+                                if(parent.name.toLowerCase().includes(q)) return true;
+                                return parent.subs.some(s=>s.toLowerCase().includes(q));
+                              }).map(parent=>{
+                                const catsForParent = parent.subs.length? parent.subs : [parent.name];
+                                const allSelected = catsForParent.every(c=>tplCats.has(c));
+                                const someSelected = !allSelected && catsForParent.some(c=>tplCats.has(c));
                                 return(
-                                  <button key={c} type="button" style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',background:sel?'#0ea5e910':'transparent',border:'none',color:sel?'#e5e7eb':'#9ca3af',fontSize:13,cursor:'pointer'}}
-                                    onClick={()=>{const n=new Set(tplCats);sel?n.delete(c):n.add(c);setTplCats(n);}}>
-                                    <span>{c}</span>
-                                    {sel&&<span style={{fontSize:11}}>✓</span>}
-                                  </button>
+                                  <div key={parent.name} style={{borderBottom:'1px solid #020617'}}>
+                                    <button
+                                      type="button"
+                                      style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 10px',background:someSelected||allSelected?'#0ea5e910':'transparent',border:'none',color:'#e5e7eb',fontSize:13,cursor:'pointer'}}
+                                      onClick={()=>{const n=new Set(tplCats); if(allSelected){catsForParent.forEach(c=>n.delete(c));} else {catsForParent.forEach(c=>n.add(c));} setTplCats(n);}}
+                                    >
+                                      <span>{parent.name}</span>
+                                      <span style={{fontSize:11,color:'#9ca3af'}}>{allSelected?'✓':someSelected?'~':''}</span>
+                                    </button>
+                                    {parent.subs.length>0&&(
+                                      <div style={{padding:'2px 4px 6px'}}>
+                                        {parent.subs.map(sub=>{
+                                          const sel = tplCats.has(sub);
+                                          const subLabel=sub.replace(parent.name,'').replace(/^\s*\(|\)\s*$/g,'').trim();
+                                          return(
+                                            <button key={sub} type="button" style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'4px 12px',background:sel?'#0ea5e908':'transparent',border:'none',color:sel?'#e5e7eb':'#9ca3af',fontSize:12,cursor:'pointer'}}
+                                              onClick={()=>{const n=new Set(tplCats);sel?n.delete(sub):n.add(sub);setTplCats(n);}}>
+                                              <span>{subLabel}</span>
+                                              {sel&&<span style={{fontSize:11}}>✓</span>}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
                                 );
                               })}
                               {!allCats.length&&<div style={{padding:'8px 10px',fontSize:11,color:'#4b5563'}}>Ingen kategorier endnu – importer eller opret leads først.</div>}
+                            </div>
+                            <div style={{padding:'6px 8px',borderTop:'1px solid #1f2937',display:'flex',gap:6}}>
+                              <input className="inp" style={{flex:1,padding:'5px 8px',fontSize:12}} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e=>setTplCatCustom(e.target.value)}/>
+                              <button className="btn btn-p" style={{fontSize:11,padding:'4px 10px'}} onClick={()=>{if(!tplCatCustom.trim())return;const n=new Set(tplCats);n.add(tplCatCustom.trim());setTplCats(n);setTplCatCustom('');}}>Tilføj</button>
                             </div>
                           </div>
                         )}
