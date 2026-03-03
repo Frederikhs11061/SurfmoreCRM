@@ -367,6 +367,10 @@ export default function CRMApp() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState('dashboard');
   const [sel, setSel] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [templates, setTemplates] = useState([]);
   const [tplLoading, setTplLoading] = useState(false);
   const [editTpl, setEditTpl] = useState(null);
@@ -408,6 +412,28 @@ export default function CRMApp() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
+
+  // ── Auth session ────────────────────────────────────────────────────────
+  useEffect(()=>{
+    let mounted = true;
+    const init = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if(!mounted) return;
+        setUser(data.session?.user || null);
+      } finally {
+        if(mounted) setAuthLoading(false);
+      }
+    };
+    init();
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session)=>{
+      setUser(session?.user || null);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  },[]);
 
   // ── Load from Supabase ──────────────────────────────────────────────────
   useEffect(()=>{
@@ -586,6 +612,32 @@ export default function CRMApp() {
       msg(list.length+' emails kopieret til udklipsholderen');
     }catch(e){
       msg('Kunne ikke kopiere emails: '+(e.message||''),'err');
+    }
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      if (error) throw error;
+      msg('Logget ind');
+    } catch(e) {
+      msg('Login fejlede: '+e.message,'err');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+    } catch(e) {
+      msg('Kunne ikke logge ud: '+e.message,'err');
     }
   };
 
@@ -968,6 +1020,66 @@ export default function CRMApp() {
     {id:'shopify_settings',label:'Shopify'},
     {id:'settings',label:'Indstillinger'},
   ];
+
+  if (authLoading) {
+    return (
+      <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#020617',color:'#e5e7eb',fontFamily:'system-ui,sans-serif',flexDirection:'column',gap:12}}>
+        <div style={{width:36,height:36,border:'3px solid #1f2937',borderTop:'3px solid #0ea5e9',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{color:'#4b5563',fontSize:13}}>Tjekker login...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#020617',color:'#e5e7eb',fontFamily:'system-ui,sans-serif'}}>
+        <style>{`
+          *{box-sizing:border-box}
+          input,button{font-family:inherit}
+        `}</style>
+        <div style={{width:'100%',maxWidth:380,background:'#020617',borderRadius:18,border:'1px solid #1f2937',padding:24,boxShadow:'0 20px 60px rgba(0,0,0,0.8)'}}>
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>Surfmore CRM</div>
+            <div style={{fontSize:13,color:'#6b7280'}}>Log ind med din arbejds-email</div>
+          </div>
+          <form onSubmit={handleLogin} style={{display:'flex',flexDirection:'column',gap:10}}>
+            <div>
+              <label style={{fontSize:12,color:'#6b7280',display:'block',marginBottom:4}}>Email</label>
+              <input
+                className="inp"
+                type="email"
+                value={authEmail}
+                onChange={e=>setAuthEmail(e.target.value)}
+                placeholder="f.eks. jeppe@surfmore.dk"
+              />
+            </div>
+            <div>
+              <label style={{fontSize:12,color:'#6b7280',display:'block',marginBottom:4}}>Adgangskode</label>
+              <input
+                className="inp"
+                type="password"
+                value={authPassword}
+                onChange={e=>setAuthPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <button
+              type="submit"
+              className="btn btn-p"
+              disabled={authLoading || !authEmail || !authPassword}
+              style={{marginTop:6,justifyContent:'center'}}
+            >
+              {authLoading ? 'Logger ind...' : 'Log ind'}
+            </button>
+          </form>
+          <div style={{marginTop:14,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
+            Brugere oprettes i Supabase under <span style={{color:'#e5e7eb'}}>Authentication → Users</span>.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return(
     <div style={{display:'flex',minHeight:'100vh',background:'#0a0f1e',color:'#e2e8f0',fontFamily:'system-ui,sans-serif'}}>
