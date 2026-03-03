@@ -396,12 +396,19 @@ export default function CRMApp() {
     return () => clearInterval(id);
   }, [scrapeLoading, scrapeStartedAt]);
   const [scrapeRows, setScrapeRows] = useState([]);
-  const scrapeNameLines = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const scrapeNameLinesRaw = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
   const scrapeNameCounts = {};
-  scrapeNameLines.forEach(n => {
+  scrapeNameLinesRaw.forEach(n => {
     scrapeNameCounts[n] = (scrapeNameCounts[n]||0) + 1;
   });
   const scrapeNameDupes = Object.keys(scrapeNameCounts).filter(n => scrapeNameCounts[n] > 1);
+  const scrapeNameLines = [];
+  const scrapeNameSeen = new Set();
+  scrapeNameLinesRaw.forEach(n => {
+    if (scrapeNameSeen.has(n)) return;
+    scrapeNameSeen.add(n);
+    scrapeNameLines.push(n);
+  });
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
   const [fStatus, setFStatus] = useState('Alle');
