@@ -377,6 +377,7 @@ export default function CRMApp() {
   const [editTpl, setEditTpl] = useState(null);
   const [tplCats, setTplCats] = useState(new Set());
   const [tplPreviewLeadId, setTplPreviewLeadId] = useState(null);
+  const [detailTplId, setDetailTplId] = useState('');
   const [editLead, setEditLead] = useState(null);
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
@@ -613,6 +614,33 @@ export default function CRMApp() {
       msg(list.length+' emails kopieret til udklipsholderen');
     }catch(e){
       msg('Kunne ikke kopiere emails: '+(e.message||''),'err');
+    }
+  };
+
+  const openTemplateMail = (lead) => {
+    if(!lead) return;
+    const tpl = templates.find(t=>t.id===detailTplId);
+    if(!tpl) return msg('Vælg en mail template først','err');
+    if(!lead.email) return msg('Lead mangler email','err');
+    const subject = renderTemplate(tpl.subject, lead) || '';
+    const body = renderTemplate(tpl.body, lead) || '';
+    if(typeof window === 'undefined') return;
+    const mailto = `mailto:${encodeURIComponent(lead.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailto;
+  };
+
+  const copyTemplateMail = async (lead) => {
+    if(!lead) return;
+    const tpl = templates.find(t=>t.id===detailTplId);
+    if(!tpl) return msg('Vælg en mail template først','err');
+    try{
+      const subject = renderTemplate(tpl.subject, lead) || '';
+      const body = renderTemplate(tpl.body, lead) || '';
+      const text = `Emne: ${subject}\n\n${body}`;
+      await navigator.clipboard.writeText(text);
+      msg('Mailtekst kopieret');
+    }catch(e){
+      msg('Kunne ikke kopiere mailtekst: '+(e.message||''),'err');
     }
   };
 
