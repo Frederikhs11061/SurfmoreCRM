@@ -792,6 +792,39 @@ export default function CRMApp() {
     msg(scrapeRows.length+' scraped leads sendt til import');
   };
 
+  const copyScrapeTable = async () => {
+    if(!scrapeRows.length) return msg('Ingen scraped leads at kopiere','err');
+    try{
+      const header = ['Navn','Kategori','Underkategori','Land','Mail','Telefon','By','B2B Outreach 1','Salg/Udbytte','Kontaktperson'];
+      const lines = [header.join('\t')];
+      scrapeRows.forEach(r=>{
+        lines.push([
+          r.name||'',
+          r.category||scrapeCategory||'',
+          r.underkategori||'',
+          r.country||scrapeCountry||'',
+          r.email||'',
+          r.phone||'',
+          r.city||'',
+          '',
+          '',
+          r.contact_person||'',
+        ].join('\t'));
+      });
+      const text = lines.join('\n');
+      await navigator.clipboard.writeText(text);
+      msg(scrapeRows.length+' rækker kopieret til udklipsholderen');
+    }catch(e){
+      msg('Kunne ikke kopiere tabel: '+(e.message||''),'err');
+    }
+  };
+
+  const clearScrape = () => {
+    setScrapeRows([]);
+    setScrapeUrls('');
+    msg('Scraperesultat ryddet');
+  };
+
   const saveLead = async () => {
     if(!editLead.name.trim()) return msg('Navn er påkrævet','err');
     setSaving(true);

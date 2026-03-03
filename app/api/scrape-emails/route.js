@@ -6,6 +6,25 @@ function extractTitle(html) {
   return m ? m[1].trim() : '';
 }
 
+function extractH1(html) {
+  const m = html.match(/<h1[^>]*>([^<]*)<\/h1>/i);
+  return m ? m[1].replace(/&nbsp;/g, ' ').trim() : '';
+}
+
+function buildName(html, url) {
+  const h1 = extractH1(html);
+  if (h1 && !/forside|home/i.test(h1)) return h1;
+  let title = extractTitle(html);
+  if (!title) return url.hostname;
+  // Split on common separators to strip taglines
+  const parts = title.split(/[\|\-–·»]/);
+  if (parts.length > 1) {
+    title = parts[0].trim();
+  }
+  if (!title) title = url.hostname;
+  return title;
+}
+
 function extractLinks(html, baseHost) {
   const links = [];
   const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi;
@@ -66,7 +85,7 @@ export async function POST(req) {
         continue;
       }
       const html = await res.text();
-      const title = extractTitle(html) || url.hostname;
+      const title = buildName(html, url);
       let emails = extractEmails(html);
 
       // Also look on a few likely subpages
