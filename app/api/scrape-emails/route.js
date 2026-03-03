@@ -69,6 +69,9 @@ function extractContacts(html, fallbackNameRaw) {
   while ((m = emailRe.exec(html))) {
     const email = m[0].toLowerCase();
     if (email.startsWith('noreply') || email.startsWith('no-reply')) continue;
+    // filtrer tekniske/domæne-mails som ikke er leads
+    const domain = email.split('@')[1] || '';
+    if (/wixpress\.com$/i.test(domain) || /sentry\./i.test(domain)) continue;
 
     const idx = m.index;
     const windowStart = Math.max(0, idx - 800);
@@ -105,6 +108,9 @@ function extractContacts(html, fallbackNameRaw) {
     } else {
       pm = snippet.match(/(\+?\d[\d\s\-\/]{6,})/);
       if (pm) phone = pm[1].trim();
+    }
+    if (phone && phone.replace(/\D/g,'').length < 8) {
+      phone = '';
     }
 
     // By (fx "8000 Aarhus C")
