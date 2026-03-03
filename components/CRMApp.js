@@ -383,6 +383,16 @@ export default function CRMApp() {
   const [scrapeCountry, setScrapeCountry] = useState('Danmark');
   const [scrapeCategory, setScrapeCategory] = useState('');
   const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeStartedAt, setScrapeStartedAt] = useState(null);
+  const [scrapeElapsed, setScrapeElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!scrapeLoading || !scrapeStartedAt) return;
+    const id = setInterval(() => {
+      setScrapeElapsed(Math.floor((Date.now() - scrapeStartedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [scrapeLoading, scrapeStartedAt]);
   const [scrapeRows, setScrapeRows] = useState([]);
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
@@ -653,6 +663,8 @@ export default function CRMApp() {
     const urls = (scrapeUrls||'').split(/\r?\n/).map(u=>u.trim()).filter(Boolean);
     if(!urls.length) return msg('Indsæt mindst én URL','err');
     setScrapeLoading(true);
+    setScrapeStartedAt(Date.now());
+    setScrapeElapsed(0);
     setScrapeRows([]);
     try{
       const res = await fetch('/api/scrape-emails',{
@@ -2212,9 +2224,16 @@ export default function CRMApp() {
                     <input className="inp" value={scrapeCategory} onChange={e=>setScrapeCategory(e.target.value)} placeholder="f.eks. Pilatescentre"/>
                   </div>
                 </div>
-                <button className="btn btn-g" style={{marginTop:12}} onClick={runScrape} disabled={scrapeLoading}>
-                  {scrapeLoading ? 'Scraper...' : 'Scrap emails'}
-                </button>
+                <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10}}>
+                  <button className="btn btn-g" onClick={runScrape} disabled={scrapeLoading}>
+                    {scrapeLoading ? 'Scraper...' : 'Scrap emails'}
+                  </button>
+                  {scrapeLoading && (
+                    <span style={{fontSize:11,color:'#9ca3af'}}>
+                      Arbejder på { (scrapeUrls||'').split(/\r?\n/).filter(Boolean).length } URL’er · {scrapeElapsed}s
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div style={{...CC.card,padding:18}}>

@@ -11,9 +11,14 @@ function extractH1(html) {
   return m ? m[1].replace(/&nbsp;/g, ' ').trim() : '';
 }
 
+function isGenericLabel(str) {
+  if (!str) return false;
+  return /medlemsliste|member list|kontakt|contact|email|e-mail|liste over medlemmer/i.test(str);
+}
+
 function buildName(html, url) {
   const h1 = extractH1(html);
-  if (h1 && !/forside|home|medlemsliste|member list/i.test(h1)) return h1;
+  if (h1 && !/forside|home/i.test(h1) && !isGenericLabel(h1)) return h1;
   let title = extractTitle(html);
   if (!title) return url.hostname;
   // Split on common separators to strip taglines
@@ -21,7 +26,7 @@ function buildName(html, url) {
   if (parts.length > 1) {
     title = parts[0].trim();
   }
-  if (!title) title = url.hostname;
+  if (!title || isGenericLabel(title)) title = url.hostname;
   return title;
 }
 
@@ -44,7 +49,20 @@ function extractLinks(html, baseHost) {
   return [...new Set(links)];
 }
 
-function extractContacts(html, fallbackName) {
+function scoreName(candidate) {
+  if (!candidate) return 0;
+  let s = 0;
+  const len = candidate.length;
+  if (len >= 3 && len <= 80) s += 1;
+  if (/\b[A-ZÆØÅ]/.test(candidate)) s += 1;
+  const words = candidate.split(/\s+/);
+  if (words.length >= 1 && words.length <= 6) s += 1;
+  if (!/[.@:]/.test(candidate)) s += 1;
+  return s;
+}
+
+function extractContacts(html, fallbackNameRaw) {
+  const safeFallback = isGenericLabel(fallbackNameRaw) ? '' : (fallbackNameRaw || '');
   const contactsMap = new Map();
   const emailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
   let m;
@@ -58,7 +76,8 @@ function extractContacts(html, fallbackName) {
     const snippet = html.slice(windowStart, windowEnd);
 
     // Find tekst tæt på email, som kan være navn
-    let name = '';
+    let bestName = '';
+    let bestScore = 0;
     const textRe = />([^<>]{2,120})</g;
     let tm;
     while ((tm = textRe.exec(snippet))) {
@@ -69,10 +88,14 @@ function extractContacts(html, fallbackName) {
       if (!candidate) continue;
       if (candidate.length < 2) continue;
       if (/@/.test(candidate)) continue;
-      if (/medlemsliste|member list|email|e-mail|kontaktformular|kontakt os/i.test(candidate)) continue;
-      name = candidate; // sidst sete tekst nærmest email
+      if (isGenericLabel(candidate)) continue;
+      const score = scoreName(candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        bestName = candidate;
+      }
     }
-    if (!name && fallbackName) name = fallbackName;
+    const name = bestName || safeFallback;
 
     // Telefon
     let phone = '';
@@ -118,7 +141,7 @@ function extractExternalSites(html, baseUrl) {
   const sites = [];
   const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
   let m;
-  while ((m = re.exec(html)) && sites.length < 600) {
+  while ((m = re.exec(html)) && sites.length < 500) {
     const href = m[1];
     let text = m[2]
       .replace(/<[^>]+>/g, '')
