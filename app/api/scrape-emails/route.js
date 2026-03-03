@@ -1,23 +1,5 @@
 import { NextResponse } from 'next/server';
 
-// Small fetch helper with timeout so single domæne ikke kan hænge hele scraperen
-async function fetchHtml(url, timeoutMs = 12000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
-      signal: controller.signal,
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(id);
-  }
-}
-
 // Very lightweight HTML helpers (no DOM)
 function extractTitle(html) {
   const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
@@ -198,8 +180,14 @@ export async function POST(req) {
       continue;
     }
     try {
-      const html = await fetchHtml(url.toString());
-      if (!html) continue;
+      const res = await fetch(url.toString(), {
+        headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+      });
+      if (!res.ok) {
+        errors.push({ url: url.toString(), reason: 'http_' + res.status });
+        continue;
+      }
+      const html = await res.text();
 
       // 1) Emails + kontakt-info direkte på siden + kontakt-undersider
       {
@@ -209,8 +197,11 @@ export async function POST(req) {
         const contactLinks = extractLinks(html, url);
         for (const cUrl of contactLinks.slice(0, 3)) {
           try {
-            const subHtml = await fetchHtml(cUrl);
-            if (!subHtml) continue;
+            const r = await fetch(cUrl, {
+              headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+            });
+            if (!r.ok) continue;
+            const subHtml = await r.text();
             contacts = contacts.concat(extractContacts(subHtml, title));
           } catch {
             // ignore
@@ -218,7 +209,7 @@ export async function POST(req) {
         }
 
         // dedup på email
-        const byEmail = new Map();
+        let byEmail = new Map();
         for (const c of contacts) {
           const prev = byEmail.get(c.email) || {};
           byEmail.set(c.email, {
@@ -228,6 +219,21 @@ export async function POST(req) {
             city: c.city || prev.city || '',
             contact_person: c.contact_person || prev.contact_person || '',
           });
+        }
+
+        // fallback: hvis vi stadig ingen kontakter har, tag rene emails direkte
+        if (!byEmail.size) {
+          const fallbackContacts = extractContacts(html, title);
+          for (const c of fallbackContacts) {
+            const prev = byEmail.get(c.email) || {};
+            byEmail.set(c.email, {
+              email: c.email,
+              name: c.name || prev.name || title,
+              phone: c.phone || prev.phone || '',
+              city: c.city || prev.city || '',
+              contact_person: c.contact_person || prev.contact_person || '',
+            });
+          }
         }
 
         for (const c of byEmail.values()) {
@@ -251,8 +257,14 @@ export async function POST(req) {
       const externalSites = extractExternalSites(html, url.toString());
       for (const site of externalSites) {
         try {
-          const extHtml = await fetchHtml(site.url);
-          if (!extHtml) continue;
+          const r = await fetch(site.url, {
+            headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+          });
+          if (!r.ok) {
+            errors.push({ url: site.url, reason: 'http_' + r.status });
+            continue;
+          }
+          const extHtml = await r.text();
 
           const extUrl = new URL(site.url);
           const extTitle = buildName(extHtml, extUrl);
@@ -263,8 +275,11 @@ export async function POST(req) {
           const contactLinks2 = extractLinks(extHtml, extUrl);
           for (const cUrl of contactLinks2.slice(0, 2)) {
             try {
-              const subHtml = await fetchHtml(cUrl);
-              if (!subHtml) continue;
+              const r2 = await fetch(cUrl, {
+                headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+              });
+              if (!r2.ok) continue;
+              const subHtml = await r2.text();
               contacts = contacts.concat(extractContacts(subHtml, baseName));
             } catch {
               // ignore
