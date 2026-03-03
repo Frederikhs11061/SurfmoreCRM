@@ -644,6 +644,23 @@ export default function CRMApp() {
     }
   };
 
+  const handleResetPassword = async () => {
+    setAuthError('');
+    if(!authEmail.trim()) {
+      setAuthError('Skriv din email for at nulstille adgangskode');
+      return;
+    }
+    try{
+      const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(),{ redirectTo });
+      if(error) throw error;
+      msg('Reset-link sendt til '+authEmail.trim());
+    }catch(e){
+      setAuthError(e.message || 'Kunne ikke sende reset-link');
+      msg('Kunne ikke sende reset-link: '+e.message,'err');
+    }
+  };
+
   const openNewTemplate = () => {
     setEditTpl({
       id:null,
@@ -1036,15 +1053,15 @@ export default function CRMApp() {
 
   if (!user) {
     return (
-      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'radial-gradient(circle at top,#1f2933,#020617 55%)',color:'#e5e7eb',fontFamily:'system-ui,sans-serif',padding:20}}>
+      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'radial-gradient(circle at top,#1f2933,#020617 55%)',color:'#e5e7eb',fontFamily:'system-ui,sans-serif',padding:24}}>
         <style>{`
           *{box-sizing:border-box}
           input,button{font-family:inherit}
         `}</style>
         <div style={{width:'100%',maxWidth:880,display:'grid',gridTemplateColumns:'minmax(0,1.1fr) minmax(0,1fr)',gap:32,alignItems:'stretch'}}>
-          <div style={{padding:28,borderRadius:22,background:'linear-gradient(135deg,#0f172a,#020617)',border:'1px solid #1f2937',boxShadow:'0 24px 80px rgba(0,0,0,0.85)'}}>
+          <div style={{padding:32,borderRadius:26,background:'linear-gradient(135deg,#0b1120,#020617)',border:'1px solid #1f2937',boxShadow:'0 24px 80px rgba(0,0,0,0.85)'}}>
             <div style={{marginBottom:26}}>
-              <div style={{fontSize:22,fontWeight:800,marginBottom:6}}>Surfmore CRM</div>
+              <div style={{fontSize:26,fontWeight:800,marginBottom:6,letterSpacing:0.5}}>Surfmore CRM</div>
               <div style={{fontSize:13,color:'#9ca3af',maxWidth:320}}>Login kræves for at se leads, outreach‑historik og mailskabeloner.</div>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:10,fontSize:12,color:'#9ca3af'}}>
@@ -1053,47 +1070,57 @@ export default function CRMApp() {
               <div>• Alle ændringer logges i Supabase databasen.</div>
             </div>
           </div>
-          <div style={{background:'#020617',borderRadius:22,border:'1px solid #1f2937',padding:26,boxShadow:'0 20px 60px rgba(0,0,0,0.7)',display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{background:'#020617',borderRadius:26,border:'1px solid #1f2937',padding:28,boxShadow:'0 20px 60px rgba(0,0,0,0.7)',display:'flex',flexDirection:'column',gap:16}}>
             <div>
-              <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Log ind</div>
+              <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>Log ind</div>
               <div style={{fontSize:12,color:'#6b7280'}}>Brug din arbejds‑email og adgangskode</div>
             </div>
             {authError&&(
-              <div style={{background:'#b91c1c22',border:'1px solid #b91c1c55',borderRadius:10,padding:'8px 10px',fontSize:12,color:'#fecaca'}}>
+              <div style={{background:'#b91c1c22',border:'1px solid #b91c1c55',borderRadius:10,padding:'9px 11px',fontSize:12,color:'#fecaca'}}>
                 {authError}
               </div>
             )}
-            <form onSubmit={handleLogin} style={{display:'flex',flexDirection:'column',gap:10}}>
+            <form onSubmit={handleLogin} style={{display:'flex',flexDirection:'column',gap:12}}>
               <div>
-                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:4}}>Email</label>
+                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:6}}>Email</label>
                 <input
                   className="inp"
                   type="email"
                   value={authEmail}
                   onChange={e=>setAuthEmail(e.target.value)}
-                  placeholder="f.eks. jeppe@surfmore.dk"
+                  placeholder="arbejds-email"
+                  style={{height:44,fontSize:14}}
                 />
               </div>
               <div>
-                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:4}}>Adgangskode</label>
+                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:6}}>Adgangskode</label>
                 <input
                   className="inp"
                   type="password"
                   value={authPassword}
                   onChange={e=>setAuthPassword(e.target.value)}
                   placeholder="••••••••"
+                  style={{height:44,fontSize:14}}
                 />
               </div>
               <button
                 type="submit"
                 className="btn btn-p"
                 disabled={authLoading || !authEmail || !authPassword}
-                style={{marginTop:4,justifyContent:'center'}}
+                style={{marginTop:4,justifyContent:'center',height:44,fontSize:14}}
               >
                 {authLoading ? 'Logger ind...' : 'Log ind'}
               </button>
             </form>
-            <div style={{marginTop:8,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
+            <button
+              type="button"
+              className="btn btn-g"
+              onClick={handleResetPassword}
+              style={{marginTop:2,justifyContent:'center',fontSize:12,padding:'8px 10px'}}
+            >
+              Glemt adgangskode
+            </button>
+            <div style={{marginTop:6,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
               Brugere oprettes i Supabase under <span style={{color:'#e5e7eb'}}>Authentication → Users</span>.
             </div>
           </div>
