@@ -386,6 +386,7 @@ export default function CRMApp() {
   const [scrapeStartedAt, setScrapeStartedAt] = useState(null);
   const [scrapeElapsed, setScrapeElapsed] = useState(0);
   const [scrapeErrors, setScrapeErrors] = useState([]);
+  const [scrapeNamesRaw, setScrapeNamesRaw] = useState('');
 
   useEffect(() => {
     if (!scrapeLoading || !scrapeStartedAt) return;
@@ -676,9 +677,18 @@ export default function CRMApp() {
       });
       if(!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
-      setScrapeRows(data.leads||[]);
+      let rows = data.leads||[];
+      // hvis brugeren har sat navne ind manuelt, overskriv navn pr. række i rækkefølge
+      const nameLines = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length);
+      if(nameLines.length){
+        rows = rows.map((r,idx)=>({
+          ...r,
+          name: nameLines[idx] || r.name || '',
+        }));
+      }
+      setScrapeRows(rows);
       setScrapeErrors(data.errors||[]);
-      msg((data.leads||[]).length+' leads fundet');
+      msg(rows.length+' leads fundet');
     }catch(e){
       msg('Fejl ved scraping: '+(e.message||''),'err');
     }
@@ -2226,6 +2236,18 @@ export default function CRMApp() {
                     <label>Standardkategori</label>
                     <input className="inp" value={scrapeCategory} onChange={e=>setScrapeCategory(e.target.value)} placeholder="f.eks. Pilatescentre"/>
                   </div>
+                </div>
+                <div style={{marginTop:10}}>
+                  <label>Navneliste (valgfri)</label>
+                  <div style={{fontSize:11,color:'#6b7280',marginBottom:4}}>Sæt kopieret navneliste ind her – én klub pr. linje. Vi matcher i rækkefølge og overskriver "Navn" kolonnen.</div>
+                  <textarea
+                    className="inp"
+                    rows={6}
+                    value={scrapeNamesRaw}
+                    onChange={e=>setScrapeNamesRaw(e.target.value)}
+                    placeholder={'Din Morgenstund\nDit Liv - Din Trivsel\nDropinyoga-Odense.dk\nD\'YOGA\n...'}
+                    style={{fontFamily:'monospace',fontSize:12,resize:'vertical'}}
+                  />
                 </div>
                 <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10}}>
                   <button className="btn btn-g" onClick={runScrape} disabled={scrapeLoading}>
