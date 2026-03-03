@@ -37,6 +37,13 @@ function extractEmails(html) {
   return [...set];
 }
 
+function normaliseUrl(value) {
+  let v = (value || '').trim();
+  if (!v) return null;
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+  return v;
+}
+
 export async function POST(req) {
   const { urls = [], country = '', category = '' } = await req.json();
   const out = [];
@@ -44,7 +51,9 @@ export async function POST(req) {
   for (const raw of urls) {
     let url;
     try {
-      url = new URL(raw);
+      const norm = normaliseUrl(raw);
+      if (!norm) continue;
+      url = new URL(norm);
     } catch {
       continue;
     }
@@ -52,7 +61,10 @@ export async function POST(req) {
       const res = await fetch(url.toString(), {
         headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        // Skip sites we can't reach (4xx/5xx)
+        continue;
+      }
       const html = await res.text();
       const title = extractTitle(html) || url.hostname;
       let emails = extractEmails(html);
