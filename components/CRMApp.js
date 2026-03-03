@@ -385,6 +385,7 @@ export default function CRMApp() {
   const [scrapeLoading, setScrapeLoading] = useState(false);
   const [scrapeStartedAt, setScrapeStartedAt] = useState(null);
   const [scrapeElapsed, setScrapeElapsed] = useState(0);
+  const [scrapeErrors, setScrapeErrors] = useState([]);
 
   useEffect(() => {
     if (!scrapeLoading || !scrapeStartedAt) return;
@@ -665,6 +666,7 @@ export default function CRMApp() {
     setScrapeLoading(true);
     setScrapeStartedAt(Date.now());
     setScrapeElapsed(0);
+    setScrapeErrors([]);
     setScrapeRows([]);
     try{
       const res = await fetch('/api/scrape-emails',{
@@ -675,6 +677,7 @@ export default function CRMApp() {
       if(!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json();
       setScrapeRows(data.leads||[]);
+      setScrapeErrors(data.errors||[]);
       msg((data.leads||[]).length+' leads fundet');
     }catch(e){
       msg('Fejl ved scraping: '+(e.message||''),'err');
@@ -2241,7 +2244,12 @@ export default function CRMApp() {
                 <div style={{background:'#080d18',border:'1px solid #1a2332',borderRadius:8,padding:'8px 12px',marginBottom:10,fontSize:12,color:'#9ca3af',fontFamily:'monospace'}}>
                   Format: Navn · Kategori · Underkategori · Land · Mail · Telefon · By · B2B Outreach (gentages pr. outreach) · Salg/Udbytte · evt. Kontaktperson
                 </div>
-                <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>{scrapeRows.length} leads fundet. Du kan tilrette i import‑previewet bagefter.</div>
+                <div style={{fontSize:12,color:'#6b7280',marginBottom:4}}>{scrapeRows.length} leads fundet. Du kan tilrette i import‑previewet bagefter.</div>
+                {!!scrapeErrors.length && (
+                  <div style={{fontSize:11,color:'#f97373',marginBottom:6}}>
+                    {scrapeErrors.length} URL(er) kunne ikke hentes (tidsudløb eller blokeret). Eksempel: {scrapeErrors[0].url}
+                  </div>
+                )}
                 <div style={{maxHeight:260,overflow:'auto',border:'1px solid #1f2937',borderRadius:8}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                     <thead>

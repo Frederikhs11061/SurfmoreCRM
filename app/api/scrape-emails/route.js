@@ -186,6 +186,7 @@ function extractExternalSites(html, baseUrl) {
 export async function POST(req) {
   const { urls = [], country = '', category = '' } = await req.json();
   const out = [];
+  const errors = [];
 
   for (const raw of urls) {
     let url;
@@ -302,10 +303,10 @@ export async function POST(req) {
         }
       }
     } catch {
-      // ignore this url on error
+      errors.push({ url: url ? url.toString() : String(raw || ''), reason: 'unexpected_error' });
     }
   }
 
-  return NextResponse.json({ leads: out });
+  return NextResponse.json({ leads: out, errors });
 }
 
