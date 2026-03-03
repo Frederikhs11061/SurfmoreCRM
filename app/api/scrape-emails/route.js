@@ -184,7 +184,7 @@ function extractInternalDetailLinks(html, baseUrl) {
   const links = [];
   const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
   let m;
-  while ((m = re.exec(html)) && links.length < 80) {
+  while ((m = re.exec(html)) && links.length < 20) {
     const href = m[1];
     let text = m[2]
       .replace(/<[^>]+>/g, '')
@@ -344,54 +344,57 @@ export async function POST(req) {
             });
           }
 
-          // fra hver detaljeside kan der også være link til ekstern hjemmeside
-          const detExternal = extractExternalSites(detHtml, det.url);
-          for (const site of detExternal.slice(0, 5)) {
-            try {
-              const rExt = await fetch(site.url, {
-                headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
-              });
-              if (!rExt.ok) {
-                errors.push({ url: site.url, reason: 'http_' + rExt.status });
-                continue;
-              }
-              const extHtml = await rExt.text();
-              const extUrl = new URL(site.url);
-              const extTitle = buildName(extHtml, extUrl);
-              const baseName = site.text || extTitle;
-              let extContacts = extractContacts(extHtml, baseName);
+          // fra hver detaljeside kan der også være link til ekstern hjemmeside.
+          // Gå kun videre til eksterne sites hvis vi INGEN mails fandt på detaljesiden.
+          if (byEmail.size) continue;
 
-              const byEmailExt = new Map();
-              for (const c of extContacts) {
-                const prev = byEmailExt.get(c.email) || {};
-                byEmailExt.set(c.email, {
-                  email: c.email,
-                  name: c.name || prev.name || baseName,
-                  phone: c.phone || prev.phone || '',
-                  city: c.city || prev.city || '',
-                  contact_person: c.contact_person || prev.contact_person || '',
-                });
-              }
-
-              for (const c of byEmailExt.values()) {
-                out.push({
-                  sourceUrl: site.url,
-                  name: c.name || baseName,
-                  category: category || '',
-                  underkategori: '',
-                  country: country || '',
-                  email: c.email,
-                  phone: c.phone || '',
-                  city: c.city || '',
-                  outreach: '',
-                  sale: '',
-                  contact_person: c.contact_person || '',
-                });
-              }
-            } catch {
-              // ignore external error
-            }
+      const detExternal = extractExternalSites(detHtml, det.url);
+      for (const site of detExternal.slice(0, 3)) {
+        try {
+          const rExt = await fetch(site.url, {
+            headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+          });
+          if (!rExt.ok) {
+            errors.push({ url: site.url, reason: 'http_' + rExt.status });
+            continue;
           }
+          const extHtml = await rExt.text();
+          const extUrl = new URL(site.url);
+          const extTitle = buildName(extHtml, extUrl);
+          const baseName = site.text || extTitle;
+          let extContacts = extractContacts(extHtml, baseName);
+
+          const byEmailExt = new Map();
+          for (const c of extContacts) {
+            const prev = byEmailExt.get(c.email) || {};
+            byEmailExt.set(c.email, {
+              email: c.email,
+              name: c.name || prev.name || baseName,
+              phone: c.phone || prev.phone || '',
+              city: c.city || prev.city || '',
+              contact_person: c.contact_person || prev.contact_person || '',
+            });
+          }
+
+          for (const c of byEmailExt.values()) {
+            out.push({
+              sourceUrl: site.url,
+              name: c.name || baseName,
+              category: category || '',
+              underkategori: '',
+              country: country || '',
+              email: c.email,
+              phone: c.phone || '',
+              city: c.city || '',
+              outreach: '',
+              sale: '',
+              contact_person: c.contact_person || '',
+            });
+          }
+        } catch {
+          // ignore external error
+        }
+      }
         } catch {
           // ignore detail error
         }
