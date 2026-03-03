@@ -120,7 +120,7 @@ function extractContacts(html, fallbackNameRaw) {
     const existing = contactsMap.get(email) || {};
     contactsMap.set(email, {
       email,
-      name: name || existing.name || fallbackName || '',
+      name: name || existing.name || safeFallback || '',
       phone: existing.phone || phone,
       city: existing.city || city,
       contact_person: existing.contact_person || contact_person,
