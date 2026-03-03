@@ -371,6 +371,7 @@ export default function CRMApp() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
   const [templates, setTemplates] = useState([]);
   const [tplLoading, setTplLoading] = useState(false);
   const [editTpl, setEditTpl] = useState(null);
@@ -617,6 +618,7 @@ export default function CRMApp() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setAuthError('');
     setAuthLoading(true);
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -626,6 +628,7 @@ export default function CRMApp() {
       if (error) throw error;
       msg('Logget ind');
     } catch(e) {
+      setAuthError(e.message || 'Login fejlede');
       msg('Login fejlede: '+e.message,'err');
     } finally {
       setAuthLoading(false);
@@ -1033,48 +1036,66 @@ export default function CRMApp() {
 
   if (!user) {
     return (
-      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#020617',color:'#e5e7eb',fontFamily:'system-ui,sans-serif'}}>
+      <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'radial-gradient(circle at top,#1f2933,#020617 55%)',color:'#e5e7eb',fontFamily:'system-ui,sans-serif',padding:20}}>
         <style>{`
           *{box-sizing:border-box}
           input,button{font-family:inherit}
         `}</style>
-        <div style={{width:'100%',maxWidth:380,background:'#020617',borderRadius:18,border:'1px solid #1f2937',padding:24,boxShadow:'0 20px 60px rgba(0,0,0,0.8)'}}>
-          <div style={{marginBottom:18}}>
-            <div style={{fontSize:18,fontWeight:700,marginBottom:4}}>Surfmore CRM</div>
-            <div style={{fontSize:13,color:'#6b7280'}}>Log ind med din arbejds-email</div>
+        <div style={{width:'100%',maxWidth:880,display:'grid',gridTemplateColumns:'minmax(0,1.1fr) minmax(0,1fr)',gap:32,alignItems:'stretch'}}>
+          <div style={{padding:28,borderRadius:22,background:'linear-gradient(135deg,#0f172a,#020617)',border:'1px solid #1f2937',boxShadow:'0 24px 80px rgba(0,0,0,0.85)'}}>
+            <div style={{marginBottom:26}}>
+              <div style={{fontSize:22,fontWeight:800,marginBottom:6}}>Surfmore CRM</div>
+              <div style={{fontSize:13,color:'#9ca3af',maxWidth:320}}>Login kræves for at se leads, outreach‑historik og mailskabeloner.</div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10,fontSize:12,color:'#9ca3af'}}>
+              <div>• Ét login pr. medarbejder (oprettes i Supabase → Authentication → Users).</div>
+              <div>• Del adgang sikkert med Surfmore‑emails (fx <span style={{color:'#e5e7eb'}}>jeppe@surfmore.dk</span>).</div>
+              <div>• Alle ændringer logges i Supabase databasen.</div>
+            </div>
           </div>
-          <form onSubmit={handleLogin} style={{display:'flex',flexDirection:'column',gap:10}}>
+          <div style={{background:'#020617',borderRadius:22,border:'1px solid #1f2937',padding:26,boxShadow:'0 20px 60px rgba(0,0,0,0.7)',display:'flex',flexDirection:'column',gap:14}}>
             <div>
-              <label style={{fontSize:12,color:'#6b7280',display:'block',marginBottom:4}}>Email</label>
-              <input
-                className="inp"
-                type="email"
-                value={authEmail}
-                onChange={e=>setAuthEmail(e.target.value)}
-                placeholder="f.eks. jeppe@surfmore.dk"
-              />
+              <div style={{fontSize:16,fontWeight:700,marginBottom:4}}>Log ind</div>
+              <div style={{fontSize:12,color:'#6b7280'}}>Brug din arbejds‑email og adgangskode</div>
             </div>
-            <div>
-              <label style={{fontSize:12,color:'#6b7280',display:'block',marginBottom:4}}>Adgangskode</label>
-              <input
-                className="inp"
-                type="password"
-                value={authPassword}
-                onChange={e=>setAuthPassword(e.target.value)}
-                placeholder="••••••••"
-              />
+            {authError&&(
+              <div style={{background:'#b91c1c22',border:'1px solid #b91c1c55',borderRadius:10,padding:'8px 10px',fontSize:12,color:'#fecaca'}}>
+                {authError}
+              </div>
+            )}
+            <form onSubmit={handleLogin} style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div>
+                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:4}}>Email</label>
+                <input
+                  className="inp"
+                  type="email"
+                  value={authEmail}
+                  onChange={e=>setAuthEmail(e.target.value)}
+                  placeholder="f.eks. jeppe@surfmore.dk"
+                />
+              </div>
+              <div>
+                <label style={{fontSize:12,color:'#9ca3af',display:'block',marginBottom:4}}>Adgangskode</label>
+                <input
+                  className="inp"
+                  type="password"
+                  value={authPassword}
+                  onChange={e=>setAuthPassword(e.target.value)}
+                  placeholder="••••••••"
+                />
+              </div>
+              <button
+                type="submit"
+                className="btn btn-p"
+                disabled={authLoading || !authEmail || !authPassword}
+                style={{marginTop:4,justifyContent:'center'}}
+              >
+                {authLoading ? 'Logger ind...' : 'Log ind'}
+              </button>
+            </form>
+            <div style={{marginTop:8,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
+              Brugere oprettes i Supabase under <span style={{color:'#e5e7eb'}}>Authentication → Users</span>.
             </div>
-            <button
-              type="submit"
-              className="btn btn-p"
-              disabled={authLoading || !authEmail || !authPassword}
-              style={{marginTop:6,justifyContent:'center'}}
-            >
-              {authLoading ? 'Logger ind...' : 'Log ind'}
-            </button>
-          </form>
-          <div style={{marginTop:14,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
-            Brugere oprettes i Supabase under <span style={{color:'#e5e7eb'}}>Authentication → Users</span>.
           </div>
         </div>
       </div>
