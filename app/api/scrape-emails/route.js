@@ -13,7 +13,7 @@ function extractH1(html) {
 
 function buildName(html, url) {
   const h1 = extractH1(html);
-  if (h1 && !/forside|home/i.test(h1)) return h1;
+  if (h1 && !/forside|home|medlemsliste|member list/i.test(h1)) return h1;
   let title = extractTitle(html);
   if (!title) return url.hostname;
   // Split on common separators to strip taglines
@@ -44,16 +44,66 @@ function extractLinks(html, baseHost) {
   return [...new Set(links)];
 }
 
-function extractEmails(html) {
-  const re = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-  const set = new Set();
+function extractContacts(html, fallbackName) {
+  const contactsMap = new Map();
+  const emailRe = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
   let m;
-  while ((m = re.exec(html))) {
+  while ((m = emailRe.exec(html))) {
     const email = m[0].toLowerCase();
     if (email.startsWith('noreply') || email.startsWith('no-reply')) continue;
-    set.add(email);
+
+    const idx = m.index;
+    const windowStart = Math.max(0, idx - 800);
+    const windowEnd = Math.min(html.length, idx + 200);
+    const snippet = html.slice(windowStart, windowEnd);
+
+    // Find tekst tæt på email, som kan være navn
+    let name = '';
+    const textRe = />([^<>]{2,120})</g;
+    let tm;
+    while ((tm = textRe.exec(snippet))) {
+      const candidate = tm[1]
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!candidate) continue;
+      if (candidate.length < 2) continue;
+      if (/@/.test(candidate)) continue;
+      if (/medlemsliste|member list|email|e-mail|kontaktformular|kontakt os/i.test(candidate)) continue;
+      name = candidate; // sidst sete tekst nærmest email
+    }
+    if (!name && fallbackName) name = fallbackName;
+
+    // Telefon
+    let phone = '';
+    let pm = snippet.match(/(?:tlf\.?|telefon|phone|mobil)[^0-9+]{0,15}(\+?\d[\d\s\-\/]{6,})/i);
+    if (pm) {
+      phone = pm[1].trim();
+    } else {
+      pm = snippet.match(/(\+?\d[\d\s\-\/]{6,})/);
+      if (pm) phone = pm[1].trim();
+    }
+
+    // By (fx "8000 Aarhus C")
+    let city = '';
+    const cm = snippet.match(/(\d{4}\s+[A-ZÆØÅ][A-Za-zÆØÅæøå\s\-]{2,})/);
+    if (cm) city = cm[1].trim();
+
+    // Kontaktperson / ejer
+    let contact_person = '';
+    const om = snippet.match(/(?:kontaktperson|ejer|formand|contact person)[:\s]*([^<\n\r]{3,80})/i);
+    if (om) contact_person = om[1].trim();
+
+    const existing = contactsMap.get(email) || {};
+    contactsMap.set(email, {
+      email,
+      name: name || existing.name || fallbackName || '',
+      phone: existing.phone || phone,
+      city: existing.city || city,
+      contact_person: existing.contact_person || contact_person,
+    });
   }
-  return [...set];
+  return [...contactsMap.values()];
 }
 
 function normaliseUrl(value) {
@@ -68,7 +118,7 @@ function extractExternalSites(html, baseUrl) {
   const sites = [];
   const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
   let m;
-  while ((m = re.exec(html)) && sites.length < 40) {
+  while ((m = re.exec(html)) && sites.length < 600) {
     const href = m[1];
     let text = m[2]
       .replace(/<[^>]+>/g, '')
@@ -115,10 +165,10 @@ export async function POST(req) {
       }
       const html = await res.text();
 
-      // 1) Emails direkte på siden + kontakt-undersider
+      // 1) Emails + kontakt-info direkte på siden + kontakt-undersider
       {
         const title = buildName(html, url);
-        let emails = extractEmails(html);
+        let contacts = extractContacts(html, title);
 
         const contactLinks = extractLinks(html, url);
         for (const cUrl of contactLinks.slice(0, 3)) {
@@ -128,25 +178,38 @@ export async function POST(req) {
             });
             if (!r.ok) continue;
             const subHtml = await r.text();
-            emails = [...new Set([...emails, ...extractEmails(subHtml)])];
+            contacts = contacts.concat(extractContacts(subHtml, title));
           } catch {
             // ignore
           }
         }
 
-        for (const email of emails) {
+        // dedup på email
+        const byEmail = new Map();
+        for (const c of contacts) {
+          const prev = byEmail.get(c.email) || {};
+          byEmail.set(c.email, {
+            email: c.email,
+            name: c.name || prev.name || title,
+            phone: c.phone || prev.phone || '',
+            city: c.city || prev.city || '',
+            contact_person: c.contact_person || prev.contact_person || '',
+          });
+        }
+
+        for (const c of byEmail.values()) {
           out.push({
             sourceUrl: url.toString(),
-            name: title,
+            name: c.name || title,
             category: category || '',
             underkategori: '',
             country: country || '',
-            email,
-            phone: '',
-            city: '',
+            email: c.email,
+            phone: c.phone || '',
+            city: c.city || '',
             outreach: '',
             sale: '',
-            contact_person: '',
+            contact_person: c.contact_person || '',
           });
         }
       }
@@ -160,11 +223,12 @@ export async function POST(req) {
           });
           if (!r.ok) continue;
           const extHtml = await r.text();
-          let emails = extractEmails(extHtml);
 
           const extUrl = new URL(site.url);
           const extTitle = buildName(extHtml, extUrl);
-          const name = site.text || extTitle;
+          const baseName = site.text || extTitle;
+
+          let contacts = extractContacts(extHtml, baseName);
 
           const contactLinks2 = extractLinks(extHtml, extUrl);
           for (const cUrl of contactLinks2.slice(0, 2)) {
@@ -174,25 +238,37 @@ export async function POST(req) {
               });
               if (!r2.ok) continue;
               const subHtml = await r2.text();
-              emails = [...new Set([...emails, ...extractEmails(subHtml)])];
+              contacts = contacts.concat(extractContacts(subHtml, baseName));
             } catch {
               // ignore
             }
           }
 
-          for (const email of emails) {
+          const byEmail = new Map();
+          for (const c of contacts) {
+            const prev = byEmail.get(c.email) || {};
+            byEmail.set(c.email, {
+              email: c.email,
+              name: c.name || prev.name || baseName,
+              phone: c.phone || prev.phone || '',
+              city: c.city || prev.city || '',
+              contact_person: c.contact_person || prev.contact_person || '',
+            });
+          }
+
+          for (const c of byEmail.values()) {
             out.push({
               sourceUrl: site.url,
-              name,
+              name: c.name || baseName,
               category: category || '',
               underkategori: '',
               country: country || '',
-              email,
-              phone: '',
-              city: '',
+              email: c.email,
+              phone: c.phone || '',
+              city: c.city || '',
               outreach: '',
               sale: '',
-              contact_person: '',
+              contact_person: c.contact_person || '',
             });
           }
         } catch {
