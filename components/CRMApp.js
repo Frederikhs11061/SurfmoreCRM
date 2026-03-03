@@ -396,6 +396,12 @@ export default function CRMApp() {
     return () => clearInterval(id);
   }, [scrapeLoading, scrapeStartedAt]);
   const [scrapeRows, setScrapeRows] = useState([]);
+  const scrapeNameLines = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const scrapeNameCounts = {};
+  scrapeNameLines.forEach(n => {
+    scrapeNameCounts[n] = (scrapeNameCounts[n]||0) + 1;
+  });
+  const scrapeNameDupes = Object.keys(scrapeNameCounts).filter(n => scrapeNameCounts[n] > 1);
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
   const [fStatus, setFStatus] = useState('Alle');
@@ -679,7 +685,7 @@ export default function CRMApp() {
       const data = await res.json();
       let rows = data.leads||[];
       // hvis brugeren har sat navne ind manuelt, overskriv navn pr. række i rækkefølge
-      const nameLines = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(s=>s.length);
+      const nameLines = scrapeNameLines;
       if(nameLines.length){
         rows = rows.map((r,idx)=>({
           ...r,
@@ -2248,6 +2254,11 @@ export default function CRMApp() {
                     placeholder={'Din Morgenstund\nDit Liv - Din Trivsel\nDropinyoga-Odense.dk\nD\'YOGA\n...'}
                     style={{fontFamily:'monospace',fontSize:12,resize:'vertical'}}
                   />
+                  {!!scrapeNameDupes.length && (
+                    <div style={{marginTop:4,fontSize:11,color:'#f97373'}}>
+                      {scrapeNameDupes.length} navne forekommer flere gange: {scrapeNameDupes.slice(0,5).join(' · ')}{scrapeNameDupes.length>5?' …':''}
+                    </div>
+                  )}
                 </div>
                 <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10}}>
                   <button className="btn btn-g" onClick={runScrape} disabled={scrapeLoading}>
