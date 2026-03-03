@@ -397,14 +397,25 @@ export default function CRMApp() {
   }, [scrapeLoading, scrapeStartedAt]);
   const [scrapeRows, setScrapeRows] = useState([]);
   const scrapeNameLinesRaw = (scrapeNamesRaw||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const isLikelyNameLine = (line) => {
+    if (!line) return false;
+    const lower = line.toLowerCase();
+    if (lower.includes('@') || lower.includes('http') || lower.includes('www.')) return false;
+    if (/(telefon|tlf|mail|e-mail|adresse|postnr|postcode|by)\s*:?/i.test(lower)) return false;
+    const digits = (line.match(/\d/g) || []).length;
+    const letters = (line.match(/[A-Za-zÆØÅæøå]/g) || []).length;
+    if (digits && digits >= letters) return false;
+    return true;
+  };
+  const filteredNameLines = scrapeNameLinesRaw.filter(isLikelyNameLine);
   const scrapeNameCounts = {};
-  scrapeNameLinesRaw.forEach(n => {
+  filteredNameLines.forEach(n => {
     scrapeNameCounts[n] = (scrapeNameCounts[n]||0) + 1;
   });
   const scrapeNameDupes = Object.keys(scrapeNameCounts).filter(n => scrapeNameCounts[n] > 1);
   const scrapeNameLines = [];
   const scrapeNameSeen = new Set();
-  scrapeNameLinesRaw.forEach(n => {
+  filteredNameLines.forEach(n => {
     if (scrapeNameSeen.has(n)) return;
     scrapeNameSeen.add(n);
     scrapeNameLines.push(n);
