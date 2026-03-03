@@ -379,6 +379,11 @@ export default function CRMApp() {
   const [tplPreviewLeadId, setTplPreviewLeadId] = useState(null);
   const [detailTplId, setDetailTplId] = useState('');
   const [editLead, setEditLead] = useState(null);
+  const [scrapeUrls, setScrapeUrls] = useState('');
+  const [scrapeCountry, setScrapeCountry] = useState('Danmark');
+  const [scrapeCategory, setScrapeCategory] = useState('');
+  const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeRows, setScrapeRows] = useState([]);
   const [search, setSearch] = useState('');
   const [fCats, setFCats] = useState(new Set());
   const [fStatus, setFStatus] = useState('Alle');
@@ -644,6 +649,27 @@ export default function CRMApp() {
     }
   };
 
+  const runScrape = async () => {
+    const urls = (scrapeUrls||'').split(/\r?\n/).map(u=>u.trim()).filter(Boolean);
+    if(!urls.length) return msg('Indsæt mindst én URL','err');
+    setScrapeLoading(true);
+    setScrapeRows([]);
+    try{
+      const res = await fetch('/api/scrape-emails',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({urls,country:scrapeCountry,category:scrapeCategory}),
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      const data = await res.json();
+      setScrapeRows(data.leads||[]);
+      msg((data.leads||[]).length+' leads fundet');
+    }catch(e){
+      msg('Fejl ved scraping: '+(e.message||''),'err');
+    }
+    setScrapeLoading(false);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -740,6 +766,31 @@ export default function CRMApp() {
 
   const openAdd = () => { setEditLead({...DEFAULT_LEAD}); setView('add'); };
   const openEdit = l => { setEditLead({...l}); setView('add'); };
+
+  const sendScrapeToImport = () => {
+    if(!scrapeRows.length) return msg('Ingen scraped leads at sende','err');
+    const header = ['Navn','Kategori','Underkategori','Land','Mail','Telefon','By','B2B Outreach 1','Salg/Udbytte','Kontaktperson'];
+    const lines = [header.join(',')];
+    scrapeRows.forEach(r=>{
+      lines.push([
+        r.name||'',
+        r.category||'',
+        r.underkategori||'',
+        r.country||'',
+        r.email||'',
+        r.phone||'',
+        r.city||'',
+        '', // outreach tom
+        '', // salg tom
+        r.contact_person||'',
+      ].map(v=>`"${(v||'').replace(/"/g,'""')}"`).join(','));
+    });
+    const csv = lines.join('\n');
+    setIText(csv);
+    setIPrev(runP(csv));
+    setView('import');
+    msg(scrapeRows.length+' scraped leads sendt til import');
+  };
 
   const saveLead = async () => {
     if(!editLead.name.trim()) return msg('Navn er påkrævet','err');
@@ -1047,6 +1098,7 @@ export default function CRMApp() {
     {id:'dashboard',label:'Dashboard'},
     {id:'list',label:'Leads'},
     {id:'import',label:'Importér'},
+    {id:'scraper',label:'Lead scraper'},
     {id:'templates',label:'Mail templates'},
     {id:'shopify_settings',label:'Shopify'},
     {id:'settings',label:'Indstillinger'},
@@ -2086,6 +2138,83 @@ export default function CRMApp() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* SCRAPER */}
+        {view==='scraper'&&(
+          <div style={{padding:28}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18}}>
+              <div>
+                <h2 style={{fontWeight:700,marginBottom:4}}>Lead scraper</h2>
+                <div style={{fontSize:13,color:'#4b5563'}}>Indsæt URL’er, så henter vi emails og formaterer dem til import</div>
+              </div>
+              <button className="btn btn-p" onClick={sendScrapeToImport} disabled={!scrapeRows.length}>Send {scrapeRows.length||0} til import</button>
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'minmax(0,1.1fr) minmax(0,1.1fr)',gap:18,marginBottom:18}}>
+              <div style={{...CC.card,padding:18}}>
+                <div className="sl">Kilder (URL’er)</div>
+                <div style={{fontSize:12,color:'#6b7280',marginBottom:8}}>En URL pr. linje. Vi kigger også kort på kontakt‑sider på samme domæne.</div>
+                <textarea
+                  className="inp"
+                  rows={8}
+                  value={scrapeUrls}
+                  onChange={e=>setScrapeUrls(e.target.value)}
+                  placeholder={'https://eksempel.dk\nhttps://andet-site.dk/kontakt'}
+                  style={{fontFamily:'monospace',fontSize:12,resize:'vertical'}}
+                />
+                <div style={{marginTop:10,display:'flex',gap:10}}>
+                  <div style={{flex:1}}>
+                    <label>Land</label>
+                    <input className="inp" value={scrapeCountry} onChange={e=>setScrapeCountry(e.target.value)}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <label>Standardkategori</label>
+                    <input className="inp" value={scrapeCategory} onChange={e=>setScrapeCategory(e.target.value)} placeholder="f.eks. Pilatescentre"/>
+                  </div>
+                </div>
+                <button className="btn btn-g" style={{marginTop:12}} onClick={runScrape} disabled={scrapeLoading}>
+                  {scrapeLoading ? 'Scraper...' : 'Scrap emails'}
+                </button>
+              </div>
+
+              <div style={{...CC.card,padding:18}}>
+                <div className="sl">Importformat</div>
+                <div style={{background:'#080d18',border:'1px solid #1a2332',borderRadius:8,padding:'8px 12px',marginBottom:10,fontSize:12,color:'#9ca3af',fontFamily:'monospace'}}>
+                  Format: Navn · Kategori · Underkategori · Land · Mail · Telefon · By · B2B Outreach (gentages pr. outreach) · Salg/Udbytte · evt. Kontaktperson
+                </div>
+                <div style={{fontSize:12,color:'#6b7280',marginBottom:6}}>{scrapeRows.length} leads fundet. Du kan tilrette i import‑previewet bagefter.</div>
+                <div style={{maxHeight:260,overflow:'auto',border:'1px solid #1f2937',borderRadius:8}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{background:'#020617',position:'sticky',top:0}}>
+                        {['Navn','Kategori','Underkategori','Land','Mail','Telefon','By','Kontaktperson'].map(h=>(
+                          <th key={h} style={{padding:'6px 8px',textAlign:'left',fontSize:10,textTransform:'uppercase',letterSpacing:0.5,color:'#4b5563',borderBottom:'1px solid #1f2937'}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {!scrapeRows.length&&(
+                        <tr><td colSpan={8} style={{padding:14,fontSize:12,color:'#4b5563'}}>Ingen leads endnu. Indsæt URL’er og tryk “Scrap emails”.</td></tr>
+                      )}
+                      {scrapeRows.map((r,i)=>(
+                        <tr key={r.sourceUrl+':'+r.email+':'+i} style={{borderBottom:'1px solid #020617',background:i%2?'#020617':'transparent'}}>
+                          <td style={{padding:'6px 8px',fontWeight:600,maxWidth:180,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.name}</td>
+                          <td style={{padding:'6px 8px',color:'#9ca3af'}}>{r.category||scrapeCategory||'—'}</td>
+                          <td style={{padding:'6px 8px',color:'#4b5563'}}>—</td>
+                          <td style={{padding:'6px 8px',color:'#4b5563'}}>{r.country||scrapeCountry||'—'}</td>
+                          <td style={{padding:'6px 8px',color:'#38bdf8'}}>{r.email}</td>
+                          <td style={{padding:'6px 8px',color:'#4b5563'}}>{r.phone||'—'}</td>
+                          <td style={{padding:'6px 8px',color:'#4b5563'}}>{r.city||'—'}</td>
+                          <td style={{padding:'6px 8px',color:'#4b5563'}}>{r.contact_person||'—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         )}
