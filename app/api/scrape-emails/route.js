@@ -179,6 +179,39 @@ function extractExternalSites(html, baseUrl) {
   });
 }
 
+function extractInternalDetailLinks(html, baseUrl) {
+  const base = new URL(baseUrl);
+  const links = [];
+  const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
+  let m;
+  while ((m = re.exec(html)) && links.length < 80) {
+    const href = m[1];
+    let text = m[2]
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    try {
+      const url = new URL(href, base);
+      if (url.hostname !== base.hostname) continue;
+      if (url.hash) continue;
+      const path = url.pathname || '';
+      // spring generiske sider over
+      if (/kontakt|contact|cookie|privacy|login|sign-in|about/i.test(path)) continue;
+      // på havneguide er detaljesider typisk /havneguide/...
+      if (path === '/' || path === '') continue;
+      links.push({ url: url.toString(), text });
+    } catch {
+      // ignore
+    }
+  }
+  const seen = new Set();
+  return links.filter(l => {
+    if (seen.has(l.url)) return false;
+    seen.add(l.url);
+    return true;
+  });
+}
+
 export async function POST(req) {
   const { urls = [], country = '', category = '' } = await req.json();
   const out = [];
@@ -267,7 +300,104 @@ export async function POST(req) {
         }
       }
 
-      // 2) Eksterne sites nævnt på siden (typisk selve virksomhedernes websites)
+      // 2) Interne detaljesider (fx søgeresultater -> havnesider)
+      const internalDetails = extractInternalDetailLinks(html, url.toString());
+      for (const det of internalDetails) {
+        try {
+          const r = await fetch(det.url, {
+            headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+          });
+          if (!r.ok) {
+            errors.push({ url: det.url, reason: 'http_' + r.status });
+            continue;
+          }
+          const detHtml = await r.text();
+          const detUrlObj = new URL(det.url);
+          const detTitle = buildName(detHtml, detUrlObj);
+          let contacts = extractContacts(detHtml, detTitle);
+
+          const byEmail = new Map();
+          for (const c of contacts) {
+            const prev = byEmail.get(c.email) || {};
+            byEmail.set(c.email, {
+              email: c.email,
+              name: c.name || prev.name || detTitle,
+              phone: c.phone || prev.phone || '',
+              city: c.city || prev.city || '',
+              contact_person: c.contact_person || prev.contact_person || '',
+            });
+          }
+
+          for (const c of byEmail.values()) {
+            out.push({
+              sourceUrl: det.url,
+              name: c.name || detTitle,
+              category: category || '',
+              underkategori: '',
+              country: country || '',
+              email: c.email,
+              phone: c.phone || '',
+              city: c.city || '',
+              outreach: '',
+              sale: '',
+              contact_person: c.contact_person || '',
+            });
+          }
+
+          // fra hver detaljeside kan der også være link til ekstern hjemmeside
+          const detExternal = extractExternalSites(detHtml, det.url);
+          for (const site of detExternal.slice(0, 5)) {
+            try {
+              const rExt = await fetch(site.url, {
+                headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+              });
+              if (!rExt.ok) {
+                errors.push({ url: site.url, reason: 'http_' + rExt.status });
+                continue;
+              }
+              const extHtml = await rExt.text();
+              const extUrl = new URL(site.url);
+              const extTitle = buildName(extHtml, extUrl);
+              const baseName = site.text || extTitle;
+              let extContacts = extractContacts(extHtml, baseName);
+
+              const byEmailExt = new Map();
+              for (const c of extContacts) {
+                const prev = byEmailExt.get(c.email) || {};
+                byEmailExt.set(c.email, {
+                  email: c.email,
+                  name: c.name || prev.name || baseName,
+                  phone: c.phone || prev.phone || '',
+                  city: c.city || prev.city || '',
+                  contact_person: c.contact_person || prev.contact_person || '',
+                });
+              }
+
+              for (const c of byEmailExt.values()) {
+                out.push({
+                  sourceUrl: site.url,
+                  name: c.name || baseName,
+                  category: category || '',
+                  underkategori: '',
+                  country: country || '',
+                  email: c.email,
+                  phone: c.phone || '',
+                  city: c.city || '',
+                  outreach: '',
+                  sale: '',
+                  contact_person: c.contact_person || '',
+                });
+              }
+            } catch {
+              // ignore external error
+            }
+          }
+        } catch {
+          // ignore detail error
+        }
+      }
+
+      // 3) Eksterne sites nævnt direkte på forsiden (typisk selve virksomhedernes websites)
       const externalSites = extractExternalSites(html, url.toString());
       for (const site of externalSites) {
         try {
