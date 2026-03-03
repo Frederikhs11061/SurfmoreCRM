@@ -644,23 +644,6 @@ export default function CRMApp() {
     }
   };
 
-  const handleResetPassword = async () => {
-    setAuthError('');
-    if(!authEmail.trim()) {
-      setAuthError('Skriv din email for at nulstille adgangskode');
-      return;
-    }
-    try{
-      const redirectTo = typeof window !== 'undefined' ? window.location.origin : undefined;
-      const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(),{ redirectTo });
-      if(error) throw error;
-      msg('Reset-link sendt til '+authEmail.trim());
-    }catch(e){
-      setAuthError(e.message || 'Kunne ikke sende reset-link');
-      msg('Kunne ikke sende reset-link: '+e.message,'err');
-    }
-  };
-
   const openNewTemplate = () => {
     setEditTpl({
       id:null,
@@ -1088,7 +1071,7 @@ export default function CRMApp() {
                   type="email"
                   value={authEmail}
                   onChange={e=>setAuthEmail(e.target.value)}
-                  placeholder="arbejds-email"
+                  placeholder="Arbejds-email"
                   style={{height:44,fontSize:14}}
                 />
               </div>
@@ -1112,14 +1095,6 @@ export default function CRMApp() {
                 {authLoading ? 'Logger ind...' : 'Log ind'}
               </button>
             </form>
-            <button
-              type="button"
-              className="btn btn-g"
-              onClick={handleResetPassword}
-              style={{marginTop:2,justifyContent:'center',fontSize:12,padding:'8px 10px'}}
-            >
-              Glemt adgangskode
-            </button>
             <div style={{marginTop:6,fontSize:11,color:'#4b5563',lineHeight:1.6}}>
               Brugere oprettes i Supabase under <span style={{color:'#e5e7eb'}}>Authentication → Users</span>.
             </div>
