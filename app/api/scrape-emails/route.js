@@ -63,6 +63,35 @@ function normaliseUrl(value) {
   return v;
 }
 
+function extractExternalSites(html, baseUrl) {
+  const base = new URL(baseUrl);
+  const sites = [];
+  const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gis;
+  let m;
+  while ((m = re.exec(html)) && sites.length < 40) {
+    const href = m[1];
+    let text = m[2]
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    try {
+      const url = new URL(href, base);
+      if (url.hostname === base.hostname) continue; // skip interne links
+      if (!url.protocol.startsWith('http')) continue;
+      sites.push({ url: url.toString(), text });
+    } catch {
+      // ignore invalid
+    }
+  }
+  // dedup på url
+  const seen = new Set();
+  return sites.filter(s => {
+    if (seen.has(s.url)) return false;
+    seen.add(s.url);
+    return true;
+  });
+}
+
 export async function POST(req) {
   const { urls = [], country = '', category = '' } = await req.json();
   const out = [];
@@ -85,40 +114,90 @@ export async function POST(req) {
         continue;
       }
       const html = await res.text();
-      const title = buildName(html, url);
-      let emails = extractEmails(html);
 
-      // Also look on a few likely subpages
-      const contactLinks = extractLinks(html, url);
-      for (const cUrl of contactLinks.slice(0, 3)) {
-        try {
-          const r = await fetch(cUrl, {
-            headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+      // 1) Emails direkte på siden + kontakt-undersider
+      {
+        const title = buildName(html, url);
+        let emails = extractEmails(html);
+
+        const contactLinks = extractLinks(html, url);
+        for (const cUrl of contactLinks.slice(0, 3)) {
+          try {
+            const r = await fetch(cUrl, {
+              headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+            });
+            if (!r.ok) continue;
+            const subHtml = await r.text();
+            emails = [...new Set([...emails, ...extractEmails(subHtml)])];
+          } catch {
+            // ignore
+          }
+        }
+
+        for (const email of emails) {
+          out.push({
+            sourceUrl: url.toString(),
+            name: title,
+            category: category || '',
+            underkategori: '',
+            country: country || '',
+            email,
+            phone: '',
+            city: '',
+            outreach: '',
+            sale: '',
+            contact_person: '',
           });
-          if (!r.ok) continue;
-          const subHtml = await r.text();
-          emails = [...new Set([...emails, ...extractEmails(subHtml)])];
-        } catch {
-          // ignore errors on subpages
         }
       }
 
-      if (!emails.length) continue;
+      // 2) Eksterne sites nævnt på siden (typisk selve virksomhedernes websites)
+      const externalSites = extractExternalSites(html, url.toString());
+      for (const site of externalSites) {
+        try {
+          const r = await fetch(site.url, {
+            headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+          });
+          if (!r.ok) continue;
+          const extHtml = await r.text();
+          let emails = extractEmails(extHtml);
 
-      for (const email of emails) {
-        out.push({
-          sourceUrl: url.toString(),
-          name: title,
-          category: category || '',
-          underkategori: '',
-          country: country || '',
-          email,
-          phone: '',
-          city: '',
-          outreach: '',
-          sale: '',
-          contact_person: '',
-        });
+          const extUrl = new URL(site.url);
+          const extTitle = buildName(extHtml, extUrl);
+          const name = site.text || extTitle;
+
+          const contactLinks2 = extractLinks(extHtml, extUrl);
+          for (const cUrl of contactLinks2.slice(0, 2)) {
+            try {
+              const r2 = await fetch(cUrl, {
+                headers: { 'User-Agent': 'SurfmoreCRM/1.0 (+https://surfmore.dk)' },
+              });
+              if (!r2.ok) continue;
+              const subHtml = await r2.text();
+              emails = [...new Set([...emails, ...extractEmails(subHtml)])];
+            } catch {
+              // ignore
+            }
+          }
+
+          for (const email of emails) {
+            out.push({
+              sourceUrl: site.url,
+              name,
+              category: category || '',
+              underkategori: '',
+              country: country || '',
+              email,
+              phone: '',
+              city: '',
+              outreach: '',
+              sale: '',
+              contact_person: '',
+            });
+          }
+        } catch {
+          // ignore bad external link
+        }
       }
     } catch {
       // ignore this url on error

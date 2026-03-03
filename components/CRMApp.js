@@ -2183,7 +2183,11 @@ export default function CRMApp() {
                 <h2 style={{fontWeight:700,marginBottom:4}}>Lead scraper</h2>
                 <div style={{fontSize:13,color:'#4b5563'}}>Indsæt URL’er, så henter vi emails og formaterer dem til import</div>
               </div>
-              <button className="btn btn-p" onClick={sendScrapeToImport} disabled={!scrapeRows.length}>Send {scrapeRows.length||0} til import</button>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <button className="btn btn-g" onClick={copyScrapeTable} disabled={!scrapeRows.length}>Kopier tabel</button>
+                <button className="btn btn-g" onClick={clearScrape} disabled={!scrapeRows.length}>Ryd tabel</button>
+                <button className="btn btn-p" onClick={sendScrapeToImport} disabled={!scrapeRows.length}>Send {scrapeRows.length||0} til import</button>
+              </div>
             </div>
 
             <div style={{display:'grid',gridTemplateColumns:'minmax(0,1.1fr) minmax(0,1.1fr)',gap:18,marginBottom:18}}>
