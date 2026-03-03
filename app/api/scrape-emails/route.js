@@ -58,6 +58,11 @@ function scoreName(candidate) {
   const words = candidate.split(/\s+/);
   if (words.length >= 1 && words.length <= 6) s += 1;
   if (!/[.@:]/.test(candidate)) s += 1;
+  const digits = (candidate.match(/\d/g) || []).length;
+  if (digits > 0 && digits >= candidate.replace(/\s/g, '').length / 2) {
+    // ligner mere et nummer end et navn
+    s -= 2;
+  }
   return s;
 }
 
@@ -105,12 +110,15 @@ function extractContacts(html, fallbackNameRaw) {
     let pm = snippet.match(/(?:tlf\.?|telefon|phone|mobil)[^0-9+]{0,15}(\+?\d[\d\s\-\/]{6,})/i);
     if (pm) {
       phone = pm[1].trim();
-    } else {
-      pm = snippet.match(/(\+?\d[\d\s\-\/]{6,})/);
-      if (pm) phone = pm[1].trim();
-    }
-    if (phone && phone.replace(/\D/g,'').length < 8) {
-      phone = '';
+      const digits = phone.replace(/\D/g, '');
+      // accepter kun danske numre: 8 cifre, evt. med landekode 45 foran
+      if (/^(45)?\d{8}$/.test(digits)) {
+        if (digits.length === 10 && digits.startsWith('45')) {
+          phone = '+45 ' + digits.slice(2);
+        }
+      } else {
+        phone = '';
+      }
     }
 
     // By (fx "8000 Aarhus C")
