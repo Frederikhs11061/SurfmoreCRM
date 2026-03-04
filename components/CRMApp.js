@@ -16,7 +16,7 @@ const STATUS_OPTIONS = [
 ];
 const DEFAULT_LEAD = {
   name:'',category:'Butik & Webshop',country:'Danmark',
-  email:'',phone:'',city:'',status:'not_contacted',
+  email:'',phone:'',city:'',website:'',status:'not_contacted',
   notes:'',sale_info:'',contact_person:'',product:'',
 };
 const DEFAULT_OTR = { date:'',by:'Jeppe',note:'',sale_info:'' };
@@ -183,6 +183,7 @@ function buildColMap(headerRow) {
     else if (h.includes('mail') || h === 'email') map.mail = i;
     else if (h.includes('telefon') || h === 'phone') map.telefon = i;
     else if (h === 'by' || h.includes('city')) map.by = i;
+    else if (h.includes('website') || h.includes('webside') || h.includes('hjemmeside')) map.website = i;
     else if (h.includes('outreach')) map.otrCols.push(i);
     else if (h.includes('salg') || h.includes('udbytte') || h.includes('sale')) map.salg = i;
     else if (h.includes('kontaktperson') || h.includes('contact')) map.kontaktperson = i;
@@ -202,6 +203,7 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
   const email = getVal(p, colMap, 'mail').replace(/\s/g,'');
   const phone = getVal(p, colMap, 'telefon');
   const city = getVal(p, colMap, 'by');
+  const website = getVal(p, colMap, 'website');
   const kontaktperson = getVal(p, colMap, 'kontaktperson');
   const produkt = getVal(p, colMap, 'produkt');
   const salgRaw = getVal(p, colMap, 'salg');
@@ -225,7 +227,7 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
 
   if (!name && !email) return null;
   return {
-    name, category, country: ctry, email, phone, city, status,
+    name, category, country: ctry, email, phone, city, website, status,
     _outreaches: outreaches, notes: '', sale_info, contact_person: kontaktperson, product: produkt,
   };
 }
@@ -881,7 +883,7 @@ export default function CRMApp() {
       const isExisting = leads.find(l=>l.id===editLead.id);
       const payload = {
         name: editLead.name, category: editLead.category, country: editLead.country,
-        email: editLead.email, phone: editLead.phone, city: editLead.city,
+        email: editLead.email, phone: editLead.phone, city: editLead.city, website: editLead.website,
         status: editLead.status, notes: editLead.notes, sale_info: editLead.sale_info,
         contact_person: editLead.contact_person, product: editLead.product,
       };
@@ -1928,7 +1930,7 @@ export default function CRMApp() {
             </div>
             <div style={{...CC.card,padding:22}}>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                {[['Navn *','name','text'],['Email','email','email'],['Telefon','phone','text'],['By','city','text']].map(([lb,k,t])=>(
+                {[['Navn *','name','text'],['Email','email','email'],['Telefon','phone','text'],['By','city','text'],['Website','website','text']].map(([lb,k,t])=>(
                   <div key={k}><label>{lb}</label><input className="inp" type={t} value={editLead[k]||''} onChange={e=>setEditLead({...editLead,[k]:e.target.value})}/></div>
                 ))}
                 <div><label>Kategori</label><input className="inp" value={editLead.category||''} onChange={e=>setEditLead({...editLead,category:e.target.value})} list="cat-list"/><datalist id="cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist></div>
@@ -1966,8 +1968,24 @@ export default function CRMApp() {
               <div style={{display:'grid',gridTemplateColumns:'minmax(0,2fr) minmax(0,1.6fr)',gap:18}}>
                 <div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-                    {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person]].map(([lb,v])=>(
-                      <div key={lb}><div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div><div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>{v||'—'}</div></div>
+                    {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person],['Website',sel.website]].map(([lb,v])=>(
+                      <div key={lb}>
+                        <div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div>
+                        <div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>
+                          {lb==='Website' && v
+                            ? (
+                              <a
+                                href={v.startsWith('http') ? v : `https://${v}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{color:'#38bdf8'}}
+                              >
+                                {v}
+                              </a>
+                            )
+                            : (v || '—')}
+                        </div>
+                      </div>
                     ))}
                   </div>
                   {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
