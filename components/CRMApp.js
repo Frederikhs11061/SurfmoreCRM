@@ -1938,6 +1938,31 @@ export default function CRMApp() {
                 </div>
               )}
             </div>
+            <div style={{marginTop:18,...CC.card,padding:18}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:6}}>Hjælp til import</div>
+              <div style={{fontSize:12,color:'#9ca3af',lineHeight:1.5}}>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>1. Minimum felter i din leadliste</div>
+                  <div>For at et lead giver mening anbefales mindst: <strong>Navn</strong>, <strong>Kategori</strong> og <strong>Land</strong>. Resten kan udfyldes i CRM’et bagefter.</div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>2. Anbefalede ekstra felter</div>
+                  <div><strong>Mail</strong> (primær B2B‑email) er stærkt anbefalet. Du kan også tilføje <strong>Underkategori</strong> (til segmentering inden for brede kategorier), <strong>Kontaktperson</strong>, <strong>Telefon</strong>, <strong>By</strong>, <strong>Website</strong> og <strong>Noter</strong>. Noter importeres som første note på leadet.</div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>3. B2B Outreach og Salg</div>
+                  <div>Du kan valgfrit udfylde én eller flere <strong>B2B Outreach</strong>-kolonner og <strong>Salg/Udbytte</strong> i dit ark, hvis du allerede har historik. Det er dog ofte nemmere at sætte outreach og salg på direkte i CRM’et – enten per lead eller via bulk‑funktionen.</div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>4. Ekstra funktioner i CRM’et</div>
+                  <ul style={{paddingLeft:16,margin:0}}>
+                    <li style={{marginBottom:2}}><strong>Shopify‑integration (beta)</strong>: kan kobles på din shop via Admin API Access Token.</li>
+                    <li style={{marginBottom:2}}><strong>Lead Scraper (beta)</strong>: kan hente leads fra websites, men kræver ekstern scraper‑opsætning.</li>
+                    <li><strong>Mail templates</strong>: opret mailskabeloner per kategori/underkategori, så du hurtigt kan kopiere tekster ind i dit mailsystem.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
