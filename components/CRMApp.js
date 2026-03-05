@@ -1989,8 +1989,8 @@ export default function CRMApp() {
                           style={{
                             fontSize:14,
                             color: lb==='Email'&&!v ? '#ef4444' : undefined,
-                            whiteSpace: lb==='Kontaktperson' ? 'normal' : 'nowrap',
-                            wordBreak: lb==='Kontaktperson' ? 'break-word' : 'normal',
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
                           }}
                         >
                           {lb==='Website' && v
