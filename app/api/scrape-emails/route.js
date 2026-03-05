@@ -320,15 +320,31 @@ async function safeFetch(url, timeoutMs = 12000) {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
+      cache: 'no-store', // Prevent Next.js from caching or failing on static generation
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'da,en;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'da,en-US;q=0.9,en;q=0.8',
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1'
       },
       redirect: 'follow',
     });
     clearTimeout(timer);
-    if (!res.ok) return null;
+
+    // Cloudflare sometimes gives 403 or 503 for bots. We at least try to read the text if we can,
+    // but if it's solidly not OK and not cloudflare challenge, we abort.
+    if (!res.ok && res.status !== 403 && res.status !== 503) {
+      return null;
+    }
+
+    // Some sites (like webshoplisten) might not return strict text/html on error pages
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
       return null;
