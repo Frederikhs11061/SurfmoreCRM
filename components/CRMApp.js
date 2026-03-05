@@ -1966,22 +1966,107 @@ export default function CRMApp() {
             <div style={{marginTop:12,...CC.card,padding:18}}>
               <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:6}}>Tip til Sheets‑skabelonen</div>
               <div style={{fontSize:12,color:'#9ca3af',lineHeight:1.5}}>
-                <div style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>1. Brug faste headers</div>
-                  <div>Skabelonen kan fx indeholde: <em>Navn, Kategori, Land, By, Websites, Mail, Kontaktperson, Telefon, B2B Outreach 1-4, Noter, Salg/Udbytte</em>. Udfyld det, du har – minimum er stadig <strong>Navn</strong>, <strong>Kategori</strong>, <strong>Land</strong>.</div>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>2. Stavning og konsistens</div>
-                  <div>Stav <strong>Kategori</strong>, <strong>Underkategori</strong>, <strong>Land</strong> osv. ens hver gang (fx altid <em>Klubber</em> – ikke både <em>Klubber</em> og <em>Kluber</em>). Ellers oprettes der dublet‑kategorier ved import.</div>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>3. Struktur for B2B Outreach</div>
-                  <div>Hvis du skriver outreach før import, så brug et fast format i kolonnerne: <em>initialer, dato, produkt</em>. Fx <em>“JT, 04/03/2026, Første mail med katalog”</em>.</div>
-                </div>
-                <div style={{marginBottom:0}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>4. Struktur for Salg/Udbytte</div>
-                  <div>Har du salg før import, så skriv det fx som <em>dato, antal, produkt</em> i <strong>Salg/Udbytte</strong>-kolonnen. Det er for jeres eget overblik – formatet skal bare være konsistent.</div>
-                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11,color:'#9ca3af'}}>
+                  <thead>
+                    <tr>
+                      <th style={{textAlign:'left',padding:'4px 6px',borderBottom:'1px solid #374151'}}>SECTION</th>
+                      <th style={{textAlign:'left',padding:'4px 6px',borderBottom:'1px solid #374151'}}>INSTRUKTION</th>
+                      <th style={{textAlign:'left',padding:'4px 6px',borderBottom:'1px solid #374151'}}>EKSEMPEL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Skabelon</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Kolonner bør altid bør være med i første række (se skabelonfanen)</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Navn · Kategori · Land · By · Websites · Mail · Kontaktperson · Telefon · B2B Outreach · Noter · Salg/Udbytte</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Skabelon</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Felter der SKAL udfyldes før import</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Navn, Kategori, Land</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Skabelon</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Andre felter kan (mail/bulk) udfyldes før import hvis man vil</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Mail, Websites, Outreach, Noter osv.</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Stavefejl og konsistens</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Brug altid samme stavemåde i data</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Klubber (ikke Kluber / Klubber / Klub)</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Stavefejl og konsistens</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Vigtigt især for disse felter</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Kategori, Underkategori, Land, By</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Stavefejl og konsistens</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Stavefejl skaber nye kategorier i systemet</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Klubber og Kluber bliver to forskellige kategorier</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>B2B Outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Format i kolonnerne B2B Outreach 1/2/3/4</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Initialer, dato, tekst</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>B2B Outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Eksempel outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>JT, 04/03/2026, Første mail med katalog</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>B2B Outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Eksempel outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>JT, 10/03/2026, Ringet op – ingen svar</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>B2B Outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Eksempel outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>FH, 15/03/2026, Sendt tilbud på 50 ponchoer</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>B2B Outreach</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Minimum format hvis man vil gøre det simpelt</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Blot dato: 04/03/2026</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Salg/Udbytte</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Hvis der er solgt noget før import</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Skriv i kolonnen Salg/Udbytte</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Salg/Udbytte</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Anbefalet format</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Dato, antal, produkt</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Salg/Udbytte</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Eksempel</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>05/03/2026, 20 stk, Badeponchoer</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Noter</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Kan udfyldes før import hvis der er vigtig info</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Har aftalt at de kigger på kataloget til Q4</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Noter</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Ved import bliver noten gemt som</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Import note på leadet</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Kontaktperson</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Hvis en specifik person skal kontaktes</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Henrik Obel</td>
+                    </tr>
+                    <tr>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Kontaktperson</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Alternativt kan man skrive navn + direkte mail</td>
+                      <td style={{padding:'4px 6px',verticalAlign:'top'}}>Henrik Jensen – henrik@firma.dk</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
