@@ -1465,8 +1465,8 @@ export default function CRMApp() {
   );
 
   const CC = {
-    card: { background: '#111827', border: '1px solid #1f2937', borderRadius: 14 },
-    inner: { background: '#0d1420', border: '1px solid #1a2332', borderRadius: 10 },
+    card: { background: 'linear-gradient(180deg, #111827 0%, #0d1420 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' },
+    inner: { background: '#0a0f1e', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 10 },
   };
   const NAV = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -1559,37 +1559,37 @@ export default function CRMApp() {
   }
 
   return (
-    <div className="crm-app-container" style={{ display: 'flex', minHeight: '100vh', background: '#0a0f1e', color: '#e2e8f0', fontFamily: 'system-ui,sans-serif' }}>
+    <div className="crm-app-container" style={{ display: 'flex', minHeight: '100vh', background: '#040810', color: '#f8fafc', fontFamily: 'system-ui,sans-serif' }}>
       <style>{`
         *{box-sizing:border-box}
-        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#1f2937;border-radius:2px}
+        ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
         input,select,textarea{font-family:inherit}
-        .btn{cursor:pointer;border:none;border-radius:8px;font-weight:600;font-size:13px;transition:all 0.15s;font-family:inherit}
-        .btn-p{background:linear-gradient(135deg,#0ea5e9,#6366f1);color:#fff;padding:8px 18px}.btn-p:hover{opacity:0.85;transform:translateY(-1px)}
-        .btn-g{background:transparent;color:#6b7280;padding:8px 12px;border:1px solid #1f2937}.btn-g:hover{background:#111827;color:#e2e8f0}
-        .btn-d{background:#ef444415;color:#ef4444;padding:5px 10px;border:1px solid #ef444430}
-        .btn-v{background:#7c3aed20;color:#a78bfa;padding:8px 14px;border:1px solid #7c3aed40}.btn-v:hover{background:#7c3aed30}
-        .inp{background:#111827;border:1px solid #1f2937;border-radius:8px;color:#e2e8f0;padding:8px 12px;font-size:14px;width:100%;outline:none;transition:border 0.15s}.inp:focus{border-color:#0ea5e9}
-        .rh:hover{background:#111827 !important;cursor:pointer}
-        .tag{background:#0ea5e915;color:#38bdf8;border:1px solid #0ea5e925;border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600}
-        label{font-size:12px;color:#6b7280;display:block;margin-bottom:4px}
-        .sl{font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:10px}
-        .navbtn{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:9px;cursor:pointer;border:none;background:none;color:#4b5563;font-family:inherit;font-size:13px;font-weight:500;width:100%;transition:all 0.15s;text-align:left}
-        .navbtn:hover{background:#111827;color:#9ca3af}
-        .navbtn.active{background:#111827;color:#0ea5e9;font-weight:600}
+        .btn{cursor:pointer;border:none;border-radius:8px;font-weight:600;font-size:13px;transition:all 0.2s cubic-bezier(0.4, 0, 0.2, 1);font-family:inherit;box-shadow:0 1px 2px rgba(0,0,0,0.1)}
+        .btn-p{background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;padding:8px 18px;box-shadow:0 4px 12px rgba(14,165,233,0.25)}.btn-p:hover{opacity:0.95;transform:translateY(-1px);box-shadow:0 6px 16px rgba(14,165,233,0.4)}
+        .btn-g{background:#1e293b50;backdrop-filter:blur(4px);color:#cbd5e1;padding:8px 12px;border:1px solid rgba(255,255,255,0.1)}.btn-g:hover{background:#1e293b80;color:#fff;border-color:rgba(255,255,255,0.2)}
+        .btn-d{background:#ef444415;color:#fca5a5;padding:5px 10px;border:1px solid #ef444430;box-shadow:none}
+        .btn-v{background:#7c3aed20;color:#c4b5fd;padding:8px 14px;border:1px solid #7c3aed40;box-shadow:none}.btn-v:hover{background:#7c3aed30}
+        .inp{background:#0b1120;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#f8fafc;padding:9px 12px;font-size:14px;width:100%;outline:none;transition:all 0.2s;box-shadow:inset 0 2px 4px rgba(0,0,0,0.2)}.inp:focus{border-color:#38bdf8;box-shadow:0 0 0 2px rgba(56,189,248,0.2), inset 0 2px 4px rgba(0,0,0,0.2)}
+        .rh:hover{background:rgba(255,255,255,0.03) !important;cursor:pointer}
+        .tag{background:#0ea5e915;color:#38bdf8;border:1px solid #0ea5e925;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600}
+        label{font-size:12px;color:#94a3b8;display:block;margin-bottom:6px;font-weight:500}
+        .sl{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:12px}
+        .navbtn{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;cursor:pointer;border:none;background:none;color:#94a3b8;font-family:inherit;font-size:13px;font-weight:500;width:100%;transition:all 0.2s;text-align:left}
+        .navbtn:hover{background:rgba(255,255,255,0.05);color:#f8fafc}
+        .navbtn.active{background:linear-gradient(90deg, rgba(14,165,233,0.15) 0%, transparent 100%);color:#38bdf8;font-weight:600;border-left:2px solid #38bdf8;border-radius:0 10px 10px 0}
 
         /* --- MOBILE OPTIMIZATION --- */
         @media (max-width: 900px) {
           /* General wrapping & flex */
           div[style*="display: flex"] { flex-wrap: wrap; }
           div[style*="display: flex"][style*="flexDirection: column"] { flex-wrap: nowrap; }
-          .navbtn { flex-wrap: nowrap; } /* Prevent sidebar text wrapping */
+          .navbtn { flex-wrap: nowrap; } 
           
           /* Grids to 1 column */
           div[style*="gridTemplateColumns"],
           .scraper-grid {
             grid-template-columns: 1fr !important;
-            gap: 16px !important;
+            gap: 12px !important;
           }
           /* Except small tight 2-col inputs like City/Zip */
           div[style*="gridTemplateColumns: '1fr 1fr'"][style*="gap: 8"] {
@@ -1604,37 +1604,49 @@ export default function CRMApp() {
             position: relative !important; 
             flex-direction: row !important; 
             overflow-x: auto !important;
-            padding: 10px !important;
+            padding: 6px !important;
+            gap: 4px !important;
             border-right: none !important;
-            border-bottom: 1px solid #0f172a !important;
+            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
             scrollbar-width: none;
+            background: #060b14 !important;
           }
           .crm-sidebar::-webkit-scrollbar { display: none; }
-          .crm-sidebar-header { display: none !important; } /* Hide logo on mobile to save space */
-          .crm-sidebar .navbtn { white-space: nowrap; width: auto; padding: 6px 12px; }
-          .crm-sidebar-bottom { display: none !important; } /* Hide Supabase branding */
+          .crm-sidebar-header { display: none !important; } 
+          .crm-sidebar .navbtn { 
+            white-space: nowrap; width: auto; padding: 6px 12px !important; font-size: 13px !important;
+            border-left: none !important; border-radius: 8px !important; background: transparent !important;
+          }
+          .crm-sidebar .navbtn.active { 
+            background: rgba(255,255,255,0.08) !important; 
+            color: #fff !important; 
+            box-shadow: inset 0 -2px 0 #38bdf8 !important; 
+          }
+          .crm-sidebar-bottom { display: none !important; } 
           
-          /* Padding adjustments */
-          div[style*="padding: 28"] { padding: 16px !important; }
+          /* Tighten Padding to save space */
+          div[style*="padding: 28"] { padding: 12px !important; }
+          div[style*="padding: 20"] { padding: 14px !important; }
+          div[style*="padding: 18px 20px"] { padding: 12px !important; }
           
           /* Tables responsive wrapper */
           table { width: 100% !important; min-width: 600px !important; }
-          .table-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100% !important; padding-bottom: 10px; }
+          .table-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100% !important; padding-bottom: 4px; }
           
           /* Dashboard cards */
-          div[style*="gridTemplateColumns: repeat(4"] { grid-template-columns: 1fr 1fr !important; }
+          div[style*="gridTemplateColumns: repeat(4"] { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
           
           /* Modals */
-          div[style*="width: 800"] { width: 95% !important; padding: 20px !important; }
-          div[style*="width: 600"] { width: 95% !important; padding: 20px !important; }
-          div[style*="width: 500"] { width: 95% !important; padding: 20px !important; }
+          div[style*="width: 800"] { width: 96% !important; padding: 16px !important; }
+          div[style*="width: 600"] { width: 96% !important; padding: 16px !important; }
+          div[style*="width: 500"] { width: 96% !important; padding: 16px !important; }
         }
       `}</style>
 
-      {toast && <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: toast.t === 'err' ? '#dc2626' : '#16a34a', color: '#fff', padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 13, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none' }}>{toast.m}</div>}
+      {toast && <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: toast.t === 'err' ? '#ef4444' : '#22c55e', color: '#fff', padding: '10px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, boxShadow: '0 8px 30px rgba(0,0,0,0.6)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>{toast.m}</div>}
 
       {/* Sidebar */}
-      <div className="crm-sidebar" style={{ width: 160, background: '#080d18', borderRight: '1px solid #0f172a', display: 'flex', flexDirection: 'column', padding: '20px 10px', gap: 2, position: 'sticky', top: 0, height: '100vh', flexShrink: 0 }}>
+      <div className="crm-sidebar" style={{ width: 160, background: '#060b14', borderRight: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column', padding: '20px 10px', gap: 2, position: 'sticky', top: 0, height: '100vh', flexShrink: 0, boxShadow: '4px 0 24px rgba(0,0,0,0.2)' }}>
         <div className="crm-sidebar-header" style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 4, padding: '0 4px' }}>Surfmore</div>
         <div className="crm-sidebar-header" style={{ fontSize: 11, color: '#4b5563', marginBottom: 20, padding: '0 4px' }}>CRM</div>
         {NAV.map(n => (
