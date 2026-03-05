@@ -1952,7 +1952,6 @@ export default function CRMApp() {
                 <div><label>Status</label><select className="inp" value={editLead.status} onChange={e=>setEditLead({...editLead,status:e.target.value})}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                 <div><label>Kontaktperson</label><input className="inp" value={editLead.contact_person||''} onChange={e=>setEditLead({...editLead,contact_person:e.target.value})}/></div>
               </div>
-              <div style={{marginTop:12}}><label>Produkt</label><input className="inp" value={editLead.product||''} onChange={e=>setEditLead({...editLead,product:e.target.value})}/></div>
               <div style={{marginTop:12}}><label>Salg info</label><input className="inp" value={editLead.sale_info||''} onChange={e=>setEditLead({...editLead,sale_info:e.target.value})}/></div>
               <div style={{marginTop:12}}><label>Noter</label><textarea className="inp" rows={3} value={editLead.notes||''} onChange={e=>setEditLead({...editLead,notes:e.target.value})} style={{resize:'vertical'}}/></div>
               <div style={{display:'flex',gap:8,marginTop:14}}>
@@ -2009,7 +2008,6 @@ export default function CRMApp() {
                       </div>
                     ))}
                   </div>
-                  {sel.product&&<div style={{background:'#1e40af15',border:'1px solid #1e40af30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#93c5fd',marginBottom:8}}>Produkt: {sel.product}</div>}
                   {sel.sale_info&&(
                     <div style={{background:'#14532d15',border:'1px solid #14532d30',borderRadius:8,padding:'8px 12px',fontSize:13,color:'#4ade80',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
                       <span>Salg: {sel.sale_info}</span>
