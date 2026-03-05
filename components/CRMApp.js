@@ -1985,14 +1985,21 @@ export default function CRMApp() {
                     {[['Email',sel.email],['Telefon',sel.phone],['By',sel.city],['Land',sel.country],['Kategori',sel.category],['Kontaktperson',sel.contact_person],['Website',sel.website]].map(([lb,v])=>(
                       <div key={lb}>
                         <div style={{fontSize:11,color:'#4b5563',marginBottom:2}}>{lb}</div>
-                        <div style={{fontSize:14,color:lb==='Email'&&!v?'#ef4444':undefined}}>
+                        <div
+                          style={{
+                            fontSize:14,
+                            color: lb==='Email'&&!v ? '#ef4444' : undefined,
+                            whiteSpace: lb==='Kontaktperson' ? 'normal' : 'nowrap',
+                            wordBreak: lb==='Kontaktperson' ? 'break-word' : 'normal',
+                          }}
+                        >
                           {lb==='Website' && v
                             ? (
                               <a
                                 href={v.startsWith('http') ? v : `https://${v}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                style={{color:'#38bdf8'}}
+                                style={{color:'#38bdf8',wordBreak:'break-all'}}
                               >
                                 {v}
                               </a>
