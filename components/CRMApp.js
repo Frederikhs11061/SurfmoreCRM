@@ -115,6 +115,12 @@ function buildCategoryDisplay(kategori, underkategori, defaultCat) {
   return sub ? `${cat} (${sub})` : cat;
 }
 
+function splitCategory(cat) {
+  const m = (cat || '').match(/^(.*)\s+\(([^)]*)\)\s*$/);
+  if (!m) return { base: cat || '', sub: '' };
+  return { base: m[1], sub: m[2] };
+}
+
 // Parse notes stored as JSON string in leads.notes
 function parseLeadNotes(raw) {
   if (!raw) return [];
@@ -1948,6 +1954,25 @@ export default function CRMApp() {
                   <div key={k}><label>{lb}</label><input className="inp" type={t} value={editLead[k]||''} onChange={e=>setEditLead({...editLead,[k]:e.target.value})}/></div>
                 ))}
                 <div><label>Kategori</label><input className="inp" value={editLead.category||''} onChange={e=>setEditLead({...editLead,category:e.target.value})} list="cat-list"/><datalist id="cat-list">{allCats.map(c=><option key={c} value={c}/>)}</datalist></div>
+                {(() => {
+                  const { sub } = splitCategory(editLead.category||'');
+                  return (
+                    <div>
+                      <label>Underkategori (valgfri)</label>
+                      <input
+                        className="inp"
+                        value={sub}
+                        onChange={e=>{
+                          const { base } = splitCategory(editLead.category||'');
+                          const subVal = e.target.value.trim();
+                          const nextCat = subVal ? `${base} (${subVal})` : base;
+                          setEditLead({...editLead,category:nextCat});
+                        }}
+                        placeholder="fx Sport & Outdoor, Kajakklub"
+                      />
+                    </div>
+                  );
+                })()}
                 <div><label>Land</label><input className="inp" value={editLead.country||''} onChange={e=>setEditLead({...editLead,country:e.target.value})} list="country-list"/><datalist id="country-list">{[...new Set([...COUNTRIES,...allCountries])].sort().map(c=><option key={c} value={c}/>)}</datalist></div>
                 <div><label>Status</label><select className="inp" value={editLead.status} onChange={e=>setEditLead({...editLead,status:e.target.value})}>{STATUS_OPTIONS.map(s=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
                 <div><label>Kontaktperson</label><input className="inp" value={editLead.contact_person||''} onChange={e=>setEditLead({...editLead,contact_person:e.target.value})}/></div>
