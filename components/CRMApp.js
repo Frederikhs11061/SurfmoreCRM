@@ -1127,6 +1127,78 @@ export default function CRMApp() {
     setSaving(false);
   };
 
+  const exportBackupCSV = () => {
+    if(!leads.length){
+      msg('Ingen leads at eksportere','err');
+      return;
+    }
+    const maxOtr = Math.max(0, ...leads.map(l => (l.outreaches || []).length));
+    const headers = [
+      'Navn',
+      'Kategori',
+      'Underkategori',
+      'Land',
+      'Mail',
+      'Kontaktperson',
+      'Telefon',
+      'By',
+      'Website',
+      'Status',
+      'Noter',
+      'Salg/Udbytte',
+    ];
+    for(let i=1;i<=maxOtr;i++){
+      headers.push(`B2B Outreach ${i}`);
+    }
+    const esc = v => {
+      const s = (v ?? '').toString().replace(/"/g,'""');
+      return `"${s}"`;
+    };
+    const rows = leads.map(l => {
+      const { base, sub } = splitCategory(l.category || '');
+      const notesArr = parseLeadNotes(l.notes);
+      const notesStr = notesArr.map(n => n.text || '').filter(Boolean).join(' | ');
+      const otrStrings = (l.outreaches || []).map(o => {
+        const d = o.date ? fmtDate(o.date) : '';
+        const parts = [];
+        if(o.by) parts.push(o.by);
+        if(d) parts.push(d);
+        if(o.note) parts.push(o.note);
+        return parts.join(', ');
+      });
+      const baseCols = [
+        esc(l.name || ''),
+        esc(base || l.category || ''),
+        esc(sub || ''),
+        esc(l.country || ''),
+        esc(l.email || ''),
+        esc(l.contact_person || ''),
+        esc(l.phone || ''),
+        esc(l.city || ''),
+        esc(l.website || ''),
+        esc(l.status || ''),
+        esc(notesStr),
+        esc(l.sale_info || ''),
+      ];
+      const otrCols = [];
+      for(let i=0;i<maxOtr;i++){
+        otrCols.push(esc(otrStrings[i] || ''));
+      }
+      return baseCols.concat(otrCols).join(';');
+    });
+    const csv = [headers.map(h => esc(h)).join(';'), ...rows].join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `surfmore_crm_backup_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    msg('Backup eksporteret som CSV');
+  };
+
   const renameCategory = async (oldCat, newCat) => {
     if(!newCat.trim()||oldCat===newCat) return;
     try {
@@ -1848,6 +1920,22 @@ export default function CRMApp() {
           <div style={{padding:28,maxWidth:680}}>
             <h2 style={{fontWeight:700,marginBottom:6}}>Indstillinger</h2>
             <div style={{color:'#4b5563',fontSize:13,marginBottom:24}}>Administrer data, kategorier og lande</div>
+
+            {/* Backup & eksport */}
+            <div style={{...CC.card,padding:20,marginBottom:16}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:8}}>Backup & eksport</div>
+              <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
+                Eksporter alle leads inkl. outreaches til en CSV‑fil, som kan åbnes i Excel eller Google Sheets. God idé før du sletter større mængder data.
+              </div>
+              <button
+                className="btn btn-g"
+                style={{fontSize:12}}
+                disabled={leads.length===0}
+                onClick={exportBackupCSV}
+              >
+                Eksportér {leads.length} leads til CSV
+              </button>
+            </div>
 
             {/* Danger zone */}
             <div style={{...CC.card,padding:20,marginBottom:16,border:'1px solid #ef444430'}}>
