@@ -509,13 +509,23 @@ export default function CRMApp() {
   const loadLeads = async () => {
     setLoading(true);
     try {
-      const { data: leadsData, error: leadsError } = await supabase
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (leadsError) throw leadsError;
+      // Fetch ALL leads i batches af 1000 (Supabase har 1000-row limit pr. query)
+      let leadsData = [];
+      let lFrom = 0;
+      const LBatch = 1000;
+      while (true) {
+        const { data: lBatch, error: lError } = await supabase
+          .from('leads')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(lFrom, lFrom + LBatch - 1);
+        if (lError) throw lError;
+        leadsData = leadsData.concat(lBatch || []);
+        if ((lBatch || []).length < LBatch) break;
+        lFrom += LBatch;
+      }
 
-      // Fetch ALL outreaches in batches of 1000 (Supabase default limit)
+      // Fetch ALL outreaches i batches af 1000 (Supabase default limit)
       let outreachData = [];
       let oFrom = 0;
       const OBatch = 1000;
