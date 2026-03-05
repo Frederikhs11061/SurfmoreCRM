@@ -1892,7 +1892,7 @@ export default function CRMApp() {
             <h2 style={{fontWeight:700,marginBottom:20}}>Importér leads</h2>
             <div style={{...CC.card,padding:22}}>
               <div style={{background:'#080d18',border:'1px solid #1a2332',borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'#4b5563',fontFamily:'monospace'}}>
-                Format: Navn · Kategori · Underkategori · Land · Mail · Telefon · By · B2B Outreach (gentages pr. outreach) · Salg/Udbytte · evt. Kontaktperson
+                Format: Navn · Kategori · Underkategori · Land · Mail · Kontaktperson · Telefon · By · B2B Outreach (gentages pr. outreach) · Noter (valgfri) · Salg/Udbytte
               </div>
               <div style={{marginBottom:12}}>
                 <label>Upload fil (CSV / TSV / TXT)</label>
@@ -1901,7 +1901,7 @@ export default function CRMApp() {
               </div>
               <div style={{marginBottom:14}}>
                 <label>Eller indsæt data direkte</label>
-                <textarea className="inp" rows={6} value={iText} onChange={e=>{setIText(e.target.value);setIPrev(runP(e.target.value));}} style={{resize:'vertical',fontFamily:'monospace',fontSize:12}} placeholder="Navn,Kategori,Underkategori,Land,Mail,Telefon,By,B2B Outreach 1,B2B Outreach 2,B2B Outreach 3,Salg/Udbytte"/>
+                <textarea className="inp" rows={6} value={iText} onChange={e=>{setIText(e.target.value);setIPrev(runP(e.target.value));}} style={{resize:'vertical',fontFamily:'monospace',fontSize:12}} placeholder="Navn,Kategori,Underkategori,Land,Mail,Kontaktperson,Telefon,By,B2B Outreach 1,B2B Outreach 2,B2B Outreach 3,Noter,Salg/Udbytte"/>
               </div>
               {iPrev.length>0&&(
                 <div>
