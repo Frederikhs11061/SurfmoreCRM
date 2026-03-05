@@ -478,6 +478,7 @@ export default function CRMApp() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
+  const excelRef = useRef();
 
   // ── Auth session ────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -2205,6 +2206,42 @@ export default function CRMApp() {
                 <label>Upload fil (CSV / TSV / TXT)</label>
                 <input type="file" accept=".csv,.tsv,.txt" ref={fileRef} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{setIText(ev.target.result);setIPrev(runP(ev.target.result));};r.readAsText(f,'UTF-8');}} style={{display:'none'}}/>
                 <button className="btn btn-g" style={{marginTop:6}} onClick={()=>fileRef.current.click()}>Vælg fil</button>
+              </div>
+              <div style={{marginBottom:12}}>
+                <label>Upload Excel (XLSX) med flere faner</label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xlsm"
+                  ref={excelRef}
+                  onChange={e=>{
+                    const f=e.target.files[0];
+                    if(!f)return;
+                    const r=new FileReader();
+                    r.onload=ev=>{
+                      try{
+                        const data=new Uint8Array(ev.target.result);
+                        const wb=XLSX.read(data,{type:'array'});
+                        let allLeads=[];
+                        wb.SheetNames.forEach(name=>{
+                          const ws=wb.Sheets[name];
+                          if(!ws) return;
+                          const csv=XLSX.utils.sheet_to_csv(ws,{FS:';'});
+                          const leadsFromSheet=runP(csv);
+                          allLeads=allLeads.concat(leadsFromSheet);
+                        });
+                        setIText('');
+                        setIPrev(allLeads);
+                        msg('Excel import læst: '+allLeads.length+' leads');
+                      }catch(err){
+                        console.error(err);
+                        msg('Kunne ikke læse Excel-fil','err');
+                      }
+                    };
+                    r.readAsArrayBuffer(f);
+                  }}
+                  style={{display:'none'}}
+                />
+                <button className="btn btn-g" style={{marginTop:6}} onClick={()=>excelRef.current.click()}>Vælg Excel-fil</button>
               </div>
               <div style={{marginBottom:14}}>
                 <label>Eller indsæt data direkte</label>
