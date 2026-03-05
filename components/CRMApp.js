@@ -1157,7 +1157,13 @@ export default function CRMApp() {
     const rows = leads.map(l => {
       const { base, sub } = splitCategory(l.category || '');
       const notesArr = parseLeadNotes(l.notes);
-      const notesStr = notesArr.map(n => n.text || '').filter(Boolean).join(' | ');
+      const notesStr = notesArr
+        .map(n => {
+          const t = n.title ? `${n.title}: ` : '';
+          return (t + (n.text || '')).trim();
+        })
+        .filter(Boolean)
+        .join(' || ');
       const otrStrings = (l.outreaches || []).map(o => {
         const d = o.date ? fmtDate(o.date) : '';
         const parts = [];
@@ -1197,6 +1203,94 @@ export default function CRMApp() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     msg('Backup eksporteret som CSV');
+  };
+
+  const exportBackupCSVByCategory = () => {
+    if(!leads.length){
+      msg('Ingen leads at eksportere','err');
+      return;
+    }
+    const byCat = {};
+    for(const l of leads){
+      const { base } = splitCategory(l.category || '');
+      const key = base || l.category || 'Ukendt kategori';
+      if(!byCat[key]) byCat[key] = [];
+      byCat[key].push(l);
+    }
+    const esc = v => {
+      const s = (v ?? '').toString().replace(/"/g,'""');
+      return `"${s}"`;
+    };
+    Object.entries(byCat).forEach(([catName, group]) => {
+      const maxOtr = Math.max(0, ...group.map(l => (l.outreaches || []).length));
+      const headers = [
+        'Navn',
+        'Kategori',
+        'Underkategori',
+        'Land',
+        'Mail',
+        'Kontaktperson',
+        'Telefon',
+        'By',
+        'Website',
+        'Status',
+        'Noter',
+        'Salg/Udbytte',
+      ];
+      for(let i=1;i<=maxOtr;i++){
+        headers.push(`B2B Outreach ${i}`);
+      }
+      const rows = group.map(l => {
+        const { base, sub } = splitCategory(l.category || '');
+        const notesArr = parseLeadNotes(l.notes);
+        const notesStr = notesArr
+          .map(n => {
+            const t = n.title ? `${n.title}: ` : '';
+            return (t + (n.text || '')).trim();
+          })
+          .filter(Boolean)
+          .join(' || ');
+        const otrStrings = (l.outreaches || []).map(o => {
+          const d = o.date ? fmtDate(o.date) : '';
+          const parts = [];
+          if(o.by) parts.push(o.by);
+          if(d) parts.push(d);
+          if(o.note) parts.push(o.note);
+          return parts.join(', ');
+        });
+        const baseCols = [
+          esc(l.name || ''),
+          esc(base || l.category || ''),
+          esc(sub || ''),
+          esc(l.country || ''),
+          esc(l.email || ''),
+          esc(l.contact_person || ''),
+          esc(l.phone || ''),
+          esc(l.city || ''),
+          esc(l.website || ''),
+          esc(l.status || ''),
+          esc(notesStr),
+          esc(l.sale_info || ''),
+        ];
+        const otrCols = [];
+        for(let i=0;i<maxOtr;i++){
+          otrCols.push(esc(otrStrings[i] || ''));
+        }
+        return baseCols.concat(otrCols).join(';');
+      });
+      const csv = [headers.map(h => esc(h)).join(';'), ...rows].join('\n');
+      const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeCat = catName.replace(/[^a-z0-9]+/gi,'_').toLowerCase();
+      a.download = `surfmore_crm_${safeCat}_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+    msg('Backup eksporteret pr. kategori (flere filer)');
   };
 
   const renameCategory = async (oldCat, newCat) => {
@@ -1927,14 +2021,24 @@ export default function CRMApp() {
               <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
                 Eksporter alle leads inkl. outreaches til en CSV‑fil, som kan åbnes i Excel eller Google Sheets. God idé før du sletter større mængder data.
               </div>
-              <button
-                className="btn btn-g"
-                style={{fontSize:12}}
-                disabled={leads.length===0}
-                onClick={exportBackupCSV}
-              >
-                Eksportér {leads.length} leads til CSV
-              </button>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                <button
+                  className="btn btn-g"
+                  style={{fontSize:12}}
+                  disabled={leads.length===0}
+                  onClick={exportBackupCSV}
+                >
+                  Én fil: alle leads (CSV)
+                </button>
+                <button
+                  className="btn btn-g"
+                  style={{fontSize:12}}
+                  disabled={leads.length===0}
+                  onClick={exportBackupCSVByCategory}
+                >
+                  Flere filer: én pr. kategori
+                </button>
+              </div>
             </div>
 
             {/* Danger zone */}
