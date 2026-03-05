@@ -436,6 +436,70 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   const pageText = pageName + ' ' + stripTags(html).slice(0, 6000);
   const pageCategory = overrideCategory || detectCategory(pageText);
 
+  // ─── SPECIAL HANDLING: Webshoplisten.dk ───
+  // Webshoplisten has dedicated pages for shops (like /lirum-larum-leg/) containing all lead info,
+  // and category pages (like /baby-boern-og-teenager/) linking to those shop pages.
+  if (pageUrl_.hostname.includes('webshoplisten.dk')) {
+    const allLinks = extractLinks(html, pageUrl, { sameHostOnly: true });
+
+    // Webshops are usually 1 level deep: /shop-name/
+    const shopLinks = allLinks.filter(l => {
+      const parts = l.url.split('/').filter(Boolean);
+      return parts.length >= 3 && parts[1] === 'webshoplisten.dk' &&
+        !['kategorier', 'om-os', 'kontakt', 'blog', 'project_category'].includes(parts[2]);
+    });
+
+    const isCategoryPage = shopLinks.length > 5 && !extractEmailsFromHtml(html).some(e => e !== 'kontakt@webshoplisten.dk');
+
+    if (isCategoryPage) {
+      // Return the shop links to be queued in POST
+      const uniqueShopUrls = Array.from(new Set(shopLinks.map(l => l.url)));
+      return { results, errors, childLinks: uniqueShopUrls };
+    } else if (extractEmailsFromHtml(html).some(e => e !== 'kontakt@webshoplisten.dk')) {
+      // It's a specific shop profile page! (e.g. /lirum-larum-leg/)
+      let nameObj = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+      let shopName = nameObj ? nameObj[1].trim() : pageName;
+
+      let website = '';
+      const wMatch = html.match(/URL<\/div>[\s\S]{0,120}?(https?:\/\/[a-zA-Z0-9.\-]+)/i);
+      if (wMatch) website = wMatch[1];
+      else {
+        const extLinks = extractLinks(html, pageUrl, { externalOnly: true, maxLinks: 10 });
+        const leadUrl = extLinks.find(l => !/facebook|twitter|instagram|linkedin|youtube|google/i.test(l.url));
+        if (leadUrl) website = leadUrl.url;
+      }
+
+      const allEmails = extractEmailsFromHtml(html).filter(e => e !== 'kontakt@webshoplisten.dk');
+      const email = allEmails.length > 0 ? allEmails[0] : '';
+      const phone = extractPhone(html);
+
+      let city = '';
+      const addrMatch = html.match(/Adresse<\/div>[\s\S]*?<div[^>]*>([^<]+)<\/div>/i);
+      if (addrMatch) {
+        const cm = addrMatch[1].match(/(?:^|\s)(\d{4})\s+([A-Za-zÆØÅæøå\s]+)/);
+        if (cm) city = cm[1] + ' ' + cm[2].trim();
+      } else {
+        city = extractCity(html);
+      }
+
+      if (email) {
+        results.push({
+          name: shopName,
+          email,
+          phone,
+          city,
+          category: overrideCategory || detectCategory(shopName) || 'Butik & Webshop',
+          website,
+          sourceUrl: pageUrl,
+          contact_person: '',
+          country: country || 'Danmark'
+        });
+      }
+      return { results, errors };
+    }
+  }
+  // ─── END SPECIAL HANDLING ───
+
   // Check: does THIS page itself have a lead email? (it might be a single org)
   const pageEmails = extractEmailsFromHtml(html);
   const pageDomain = pageUrl_.hostname.replace(/^www\./, '');
@@ -618,7 +682,20 @@ export async function POST(req) {
         // Scrape each Google result
         for (const resultUrl of resultUrls.slice(0, 25)) {
           try {
-            const { results, errors } = await scrapeDirectoryPage(resultUrl, category, country);
+            const { results, errors, childLinks } = await scrapeDirectoryPage(resultUrl, category, country);
+
+            // Queue child links if present
+            if (childLinks && childLinks.length > 0) {
+              for (const childUrl of childLinks.slice(0, 40)) {
+                try {
+                  const { results: cResults } = await scrapeDirectoryPage(childUrl, category, country);
+                  for (const r of cResults) {
+                    if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+                  }
+                } catch { /* ignore child errors */ }
+              }
+            }
+
             for (const r of results) {
               if (!allResults.some(x => x.email === r.email)) allResults.push(r);
             }
@@ -627,7 +704,20 @@ export async function POST(req) {
         }
       } else {
         // ── Regular URL ──
-        const { results, errors } = await scrapeDirectoryPage(norm, category, country);
+        const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country);
+
+        // Queue child links if present (e.g. from a Webshoplisten directory)
+        if (childLinks && childLinks.length > 0) {
+          for (const childUrl of childLinks.slice(0, 80)) {
+            try {
+              const { results: cResults } = await scrapeDirectoryPage(childUrl, category, country);
+              for (const r of cResults) {
+                if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+              }
+            } catch { /* ignore child errors */ }
+          }
+        }
+
         for (const r of results) {
           if (!allResults.some(x => x.email === r.email)) allResults.push(r);
         }
