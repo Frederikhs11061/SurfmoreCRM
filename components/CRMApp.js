@@ -1559,7 +1559,7 @@ export default function CRMApp() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0f1e', color: '#e2e8f0', fontFamily: 'system-ui,sans-serif' }}>
+    <div className="crm-app-container" style={{ display: 'flex', minHeight: '100vh', background: '#0a0f1e', color: '#e2e8f0', fontFamily: 'system-ui,sans-serif' }}>
       <style>{`
         *{box-sizing:border-box}
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:#1f2937;border-radius:2px}
@@ -1577,20 +1577,72 @@ export default function CRMApp() {
         .navbtn{display:flex;align-items:center;gap:8px;padding:9px 14px;border-radius:9px;cursor:pointer;border:none;background:none;color:#4b5563;font-family:inherit;font-size:13px;font-weight:500;width:100%;transition:all 0.15s;text-align:left}
         .navbtn:hover{background:#111827;color:#9ca3af}
         .navbtn.active{background:#111827;color:#0ea5e9;font-weight:600}
+
+        /* --- MOBILE OPTIMIZATION --- */
+        @media (max-width: 900px) {
+          /* General wrapping & flex */
+          div[style*="display: flex"] { flex-wrap: wrap; }
+          div[style*="display: flex"][style*="flexDirection: column"] { flex-wrap: nowrap; }
+          .navbtn { flex-wrap: nowrap; } /* Prevent sidebar text wrapping */
+          
+          /* Grids to 1 column */
+          div[style*="gridTemplateColumns"],
+          .scraper-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+          /* Except small tight 2-col inputs like City/Zip */
+          div[style*="gridTemplateColumns: '1fr 1fr'"][style*="gap: 8"] {
+            grid-template-columns: 1fr 1fr !important;
+          }
+
+          /* Main layout: move sidebar to bottom / collapsible */
+          .crm-app-container { flex-direction: column !important; }
+          .crm-sidebar {
+            width: 100% !important; 
+            height: auto !important; 
+            position: relative !important; 
+            flex-direction: row !important; 
+            overflow-x: auto !important;
+            padding: 10px !important;
+            border-right: none !important;
+            border-bottom: 1px solid #0f172a !important;
+            scrollbar-width: none;
+          }
+          .crm-sidebar::-webkit-scrollbar { display: none; }
+          .crm-sidebar-header { display: none !important; } /* Hide logo on mobile to save space */
+          .crm-sidebar .navbtn { white-space: nowrap; width: auto; padding: 6px 12px; }
+          .crm-sidebar-bottom { display: none !important; } /* Hide Supabase branding */
+          
+          /* Padding adjustments */
+          div[style*="padding: 28"] { padding: 16px !important; }
+          
+          /* Tables responsive wrapper */
+          table { width: 100% !important; min-width: 600px !important; }
+          .table-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100% !important; padding-bottom: 10px; }
+          
+          /* Dashboard cards */
+          div[style*="gridTemplateColumns: repeat(4"] { grid-template-columns: 1fr 1fr !important; }
+          
+          /* Modals */
+          div[style*="width: 800"] { width: 95% !important; padding: 20px !important; }
+          div[style*="width: 600"] { width: 95% !important; padding: 20px !important; }
+          div[style*="width: 500"] { width: 95% !important; padding: 20px !important; }
+        }
       `}</style>
 
       {toast && <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: toast.t === 'err' ? '#dc2626' : '#16a34a', color: '#fff', padding: '10px 18px', borderRadius: 10, fontWeight: 600, fontSize: 13, boxShadow: '0 4px 20px rgba(0,0,0,0.5)', pointerEvents: 'none' }}>{toast.m}</div>}
 
       {/* Sidebar */}
-      <div style={{ width: 160, background: '#080d18', borderRight: '1px solid #0f172a', display: 'flex', flexDirection: 'column', padding: '20px 10px', gap: 2, position: 'sticky', top: 0, height: '100vh', flexShrink: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 4, padding: '0 4px' }}>Surfmore</div>
-        <div style={{ fontSize: 11, color: '#4b5563', marginBottom: 20, padding: '0 4px' }}>CRM</div>
+      <div className="crm-sidebar" style={{ width: 160, background: '#080d18', borderRight: '1px solid #0f172a', display: 'flex', flexDirection: 'column', padding: '20px 10px', gap: 2, position: 'sticky', top: 0, height: '100vh', flexShrink: 0 }}>
+        <div className="crm-sidebar-header" style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 4, padding: '0 4px' }}>Surfmore</div>
+        <div className="crm-sidebar-header" style={{ fontSize: 11, color: '#4b5563', marginBottom: 20, padding: '0 4px' }}>CRM</div>
         {NAV.map(n => (
           <button key={n.id} className={'navbtn' + (view === n.id ? ' active' : '')} onClick={() => { setBulk(false); setView(n.id); }}>
             {n.label}
           </button>
         ))}
-        <div style={{ marginTop: 'auto', padding: '0 4px' }}>
+        <div className="crm-sidebar-bottom" style={{ marginTop: 'auto', padding: '0 4px' }}>
           <div style={{ fontSize: 10, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 5 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
             <span style={{ color: '#4b5563' }}>Supabase</span>
@@ -1894,7 +1946,7 @@ export default function CRMApp() {
                 </div>
                 <button className="btn btn-p" onClick={openNewTemplate}>+ Ny template</button>
               </div>
-              <div style={{ ...CC.card, padding: 14 }}>
+              <div className="table-wrapper" style={{ ...CC.card, padding: 14 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #1f2937' }}>
@@ -2257,7 +2309,7 @@ export default function CRMApp() {
                     <span style={{ color: '#f59e0b' }}>Outreach: {iPrev.filter(l => l._outreaches?.length > 0).length}</span>
                     <span style={{ color: '#ef4444' }}>Ingen email: {iPrev.filter(l => !l.email).length}</span>
                   </div>
-                  <div style={{ maxHeight: 240, overflow: 'auto', marginBottom: 14, border: '1px solid #1f2937', borderRadius: 8 }}>
+                  <div className="table-wrapper" style={{ maxHeight: 240, overflow: 'auto', marginBottom: 14, border: '1px solid #1f2937', borderRadius: 8 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead><tr style={{ background: '#080d18', position: 'sticky', top: 0 }}>
                         {['Navn', 'Email', 'By', 'Status', 'Outreach', 'Salg'].map(h => <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>{h}</th>)}
@@ -2890,7 +2942,7 @@ export default function CRMApp() {
               </div>
 
               {/* Sheet-like table */}
-              <div className="scraper-tbl-wrap" style={{ overflowX: 'auto', maxHeight: 480, overflowY: 'auto' }}>
+              <div className="scraper-tbl-wrap table-wrapper" style={{ overflowX: 'auto', maxHeight: 480, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 700 }}>
                   <thead>
                     <tr style={{ background: '#020617', position: 'sticky', top: 0, zIndex: 1 }}>
