@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -1293,6 +1294,96 @@ export default function CRMApp() {
     msg('Backup eksporteret pr. kategori (flere filer)');
   };
 
+  const exportBackupXLSX = () => {
+    if(!leads.length){
+      msg('Ingen leads at eksportere','err');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+
+    const buildSheetData = (groupLeads) => {
+      const maxOtr = Math.max(0, ...groupLeads.map(l => (l.outreaches || []).length));
+      const headers = [
+        'Navn',
+        'Kategori',
+        'Underkategori',
+        'Land',
+        'Mail',
+        'Kontaktperson',
+        'Telefon',
+        'By',
+        'Website',
+        'Status',
+        'Noter',
+        'Salg/Udbytte',
+      ];
+      for(let i=1;i<=maxOtr;i++){
+        headers.push(`B2B Outreach ${i}`);
+      }
+      const rows = groupLeads.map(l => {
+        const { base, sub } = splitCategory(l.category || '');
+        const notesArr = parseLeadNotes(l.notes);
+        const notesStr = notesArr
+          .map(n => {
+            const t = n.title ? `${n.title}: ` : '';
+            return (t + (n.text || '')).trim();
+          })
+          .filter(Boolean)
+          .join(' || ');
+        const otrStrings = (l.outreaches || []).map(o => {
+          const d = o.date ? fmtDate(o.date) : '';
+          const parts = [];
+          if(o.by) parts.push(o.by);
+          if(d) parts.push(d);
+          if(o.note) parts.push(o.note);
+          return parts.join(', ');
+        });
+        const row = [
+          l.name || '',
+          base || l.category || '',
+          sub || '',
+          l.country || '',
+          l.email || '',
+          l.contact_person || '',
+          l.phone || '',
+          l.city || '',
+          l.website || '',
+          l.status || '',
+          notesStr,
+          l.sale_info || '',
+        ];
+        for(let i=0;i<maxOtr;i++){
+          row.push(otrStrings[i] || '');
+        }
+        return row;
+      });
+      return [headers, ...rows];
+    };
+
+    // Ark 1: alle leads
+    const allData = buildSheetData(leads);
+    const wsAll = XLSX.utils.aoa_to_sheet(allData);
+    XLSX.utils.book_append_sheet(wb, wsAll, 'Alle leads');
+
+    // Én fane pr. hovedkategori
+    const byCat = {};
+    for(const l of leads){
+      const { base } = splitCategory(l.category || '');
+      const key = base || l.category || 'Ukendt kategori';
+      if(!byCat[key]) byCat[key] = [];
+      byCat[key].push(l);
+    }
+    Object.entries(byCat).forEach(([catName, group]) => {
+      const data = buildSheetData(group);
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const safeName = catName.slice(0,28); // Excel sheet name limit 31 incl. suffix
+      XLSX.utils.book_append_sheet(wb, ws, safeName);
+    });
+
+    XLSX.writeFile(wb, `surfmore_crm_backup_${new Date().toISOString().slice(0,10)}.xlsx`);
+    msg('Backup eksporteret som Excel med faner');
+  };
+
   const renameCategory = async (oldCat, newCat) => {
     if(!newCat.trim()||oldCat===newCat) return;
     try {
@@ -2019,7 +2110,7 @@ export default function CRMApp() {
             <div style={{...CC.card,padding:20,marginBottom:16}}>
               <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:8}}>Backup & eksport</div>
               <div style={{fontSize:12,color:'#6b7280',marginBottom:12}}>
-                Eksporter alle leads inkl. outreaches til en CSV‑fil, som kan åbnes i Excel eller Google Sheets. God idé før du sletter større mængder data.
+                Eksporter alle leads inkl. outreaches til en fil, så du altid har en backup i Excel eller Google Sheets. God idé før du sletter større mængder data.
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <button
@@ -2028,7 +2119,7 @@ export default function CRMApp() {
                   disabled={leads.length===0}
                   onClick={exportBackupCSV}
                 >
-                  Én fil: alle leads (CSV)
+                  CSV: én fil med alle leads
                 </button>
                 <button
                   className="btn btn-g"
@@ -2036,7 +2127,15 @@ export default function CRMApp() {
                   disabled={leads.length===0}
                   onClick={exportBackupCSVByCategory}
                 >
-                  Flere filer: én pr. kategori
+                  CSV: flere filer (én pr. kategori)
+                </button>
+                <button
+                  className="btn btn-g"
+                  style={{fontSize:12}}
+                  disabled={leads.length===0}
+                  onClick={exportBackupXLSX}
+                >
+                  Excel (.xlsx): ark pr. kategori
                 </button>
               </div>
             </div>
