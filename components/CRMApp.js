@@ -1951,19 +1951,36 @@ export default function CRMApp() {
                 </div>
                 <div style={{marginBottom:8}}>
                   <div style={{fontWeight:600,marginBottom:2}}>3. B2B Outreach og Salg</div>
-                  <div>Du kan valgfrit udfylde én eller flere <strong>B2B Outreach</strong>-kolonner og <strong>Salg/Udbytte</strong> i dit ark, hvis du allerede har historik. Skriv fx outreach som <em>initialer, dato, produkt</em>, og salg som <em>dato, antal, produkt</em>. Det er dog ofte nemmere at sætte outreach og salg på direkte i CRM’et – enten per lead eller via bulk‑funktionen.</div>
+                  <div>Du kan valgfrit udfylde én eller flere <strong>B2B Outreach</strong>-kolonner og <strong>Salg/Udbytte</strong> i dit ark, hvis du allerede har historik. Det er dog ofte nemmere at sætte outreach og salg på direkte i CRM’et – enten per lead eller via bulk‑funktionen.</div>
                 </div>
                 <div style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>4. Stavning og konsistens i Sheets</div>
-                  <div>Stav <strong>Kategori</strong>, <strong>Underkategori</strong>, <strong>Land</strong> osv. ens hver gang (fx altid <em>Klubber</em> – aldrig både <em>Klubber</em> og <em>Kluber</em>). Ellers ender du med dublet‑kategorier.</div>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <div style={{fontWeight:600,marginBottom:2}}>5. Ekstra funktioner i CRM’et</div>
+                  <div style={{fontWeight:600,marginBottom:2}}>4. Ekstra funktioner i CRM’et</div>
                   <ul style={{paddingLeft:16,margin:0}}>
                     <li style={{marginBottom:2}}><strong>Shopify‑integration (beta)</strong>: kan kobles på din shop via Admin API Access Token.</li>
                     <li style={{marginBottom:2}}><strong>Lead Scraper (beta)</strong>: kan hente leads fra websites, men kræver ekstern scraper‑opsætning.</li>
                     <li><strong>Mail templates</strong>: opret mailskabeloner per kategori/underkategori, så du hurtigt kan kopiere tekster ind i dit mailsystem.</li>
                   </ul>
+                </div>
+              </div>
+            </div>
+            <div style={{marginTop:12,...CC.card,padding:18}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#e2e8f0',marginBottom:6}}>Tip til Sheets‑skabelonen</div>
+              <div style={{fontSize:12,color:'#9ca3af',lineHeight:1.5}}>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>1. Brug faste headers</div>
+                  <div>Skabelonen kan fx indeholde: <em>Navn, Kategori, Land, By, Websites, Mail, Kontaktperson, Telefon, B2B Outreach 1-4, Noter, Salg/Udbytte</em>. Udfyld det, du har – minimum er stadig <strong>Navn</strong>, <strong>Kategori</strong>, <strong>Land</strong>.</div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>2. Stavning og konsistens</div>
+                  <div>Stav <strong>Kategori</strong>, <strong>Underkategori</strong>, <strong>Land</strong> osv. ens hver gang (fx altid <em>Klubber</em> – ikke både <em>Klubber</em> og <em>Kluber</em>). Ellers oprettes der dublet‑kategorier ved import.</div>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>3. Struktur for B2B Outreach</div>
+                  <div>Hvis du skriver outreach før import, så brug et fast format i kolonnerne: <em>initialer, dato, produkt</em>. Fx <em>“JT, 04/03/2026, Første mail med katalog”</em>.</div>
+                </div>
+                <div style={{marginBottom:0}}>
+                  <div style={{fontWeight:600,marginBottom:2}}>4. Struktur for Salg/Udbytte</div>
+                  <div>Har du salg før import, så skriv det fx som <em>dato, antal, produkt</em> i <strong>Salg/Udbytte</strong>-kolonnen. Det er for jeres eget overblik – formatet skal bare være konsistent.</div>
                 </div>
               </div>
             </div>
