@@ -188,6 +188,7 @@ function buildColMap(headerRow) {
     else if (h.includes('salg') || h.includes('udbytte') || h.includes('sale')) map.salg = i;
     else if (h.includes('kontaktperson') || h.includes('contact')) map.kontaktperson = i;
     else if (h.includes('produkt') || h === 'product') map.produkt = i;
+    else if (h === 'noter' || h === 'note' || h === 'notes') map.notes = i;
   });
   return map;
 }
@@ -207,6 +208,7 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
   const kontaktperson = getVal(p, colMap, 'kontaktperson');
   const produkt = getVal(p, colMap, 'produkt');
   const salgRaw = getVal(p, colMap, 'salg');
+  const noteRaw = getVal(p, colMap, 'notes');
 
   // Only B2B Outreach columns create outreach entries — one per non-empty cell, no exceptions
   const otrVals = (colMap.otrCols || []).map(i => (p[i] || '').trim()).filter(Boolean);
@@ -225,10 +227,22 @@ function parseLineWithMap(p, colMap, defaultCat, defaultCountry) {
   // Normalize known country names to proper case; otherwise use the raw value from the sheet
   const ctry = knownC.find(c => land.toLowerCase() === c.toLowerCase()) || land || defaultCountry || '';
 
+  let notes = '';
+  if (noteRaw) {
+    const now = new Date().toISOString();
+    const note = {
+      id: 'imp_'+now+'_'+Math.random().toString(36).slice(2,8),
+      title: 'Import note',
+      text: noteRaw,
+      created_at: now,
+    };
+    notes = JSON.stringify([note]);
+  }
+
   if (!name && !email) return null;
   return {
     name, category, country: ctry, email, phone, city, website, status,
-    _outreaches: outreaches, notes: '', sale_info, contact_person: kontaktperson, product: produkt,
+    _outreaches: outreaches, notes, sale_info, contact_person: kontaktperson, product: produkt,
   };
 }
 
