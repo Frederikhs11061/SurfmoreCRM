@@ -2,63 +2,157 @@ import { NextResponse } from 'next/server';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function decodeHtmlEntities(str) {
+  return (str || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#\d+;/g, '');
+}
+
+function stripTags(html) {
+  return decodeHtmlEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+
 function extractTitle(html) {
-  const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return m ? m[1].trim() : '';
+  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return m ? stripTags(m[1]).trim() : '';
 }
 
 function extractH1(html) {
   const m = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
-  return m ? m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : '';
+  return m ? stripTags(m[1]).trim() : '';
 }
 
-function isGenericLabel(str) {
-  if (!str) return false;
-  return /^(kontakt|contact|email|e-mail|liste|members|links|oversigt|forside|home|menu|navigation|footer|header|søg|search)$/i.test(str.trim());
-}
+// ─── Robust name extraction: get the business/org name from the page ─────────
+// Priority: <meta og:title> → <meta og:site_name> → h1 (if it looks like a name) → <title> (cleaned)
+function extractPageName(html, url) {
+  // 1) Open Graph site_name (most reliable for the org name)
+  const ogSiteName = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:site_name["']/i);
+  if (ogSiteName) {
+    const n = stripTags(ogSiteName[1]).trim();
+    if (n.length >= 2 && n.length <= 80 && !isGenericName(n)) return n;
+  }
 
-function buildName(html, url) {
+  // 2) Open Graph title
+  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
+  if (ogTitle) {
+    let n = stripTags(ogTitle[1]).trim();
+    // Remove taglines after separators
+    n = n.split(/[\|–—·»\-]/)[0].trim();
+    if (n.length >= 2 && n.length <= 80 && !isGenericName(n)) return n;
+  }
+
+  // 3) H1 (if not generic)
   const h1 = extractH1(html);
-  if (h1 && h1.length >= 2 && h1.length <= 80 && !/forside|home/i.test(h1) && !isGenericLabel(h1) && !h1.includes('@')) return h1;
+  if (h1 && h1.length >= 2 && h1.length <= 60 && !isGenericName(h1) && !h1.includes('@')) return h1;
+
+  // 4) <title> tag (clean up taglines)
   let title = extractTitle(html);
-  if (!title) return url.hostname.replace(/^www\./, '');
-  const parts = title.split(/[\|\-–·»]/);
-  if (parts.length > 1) title = parts[0].trim();
-  if (!title || isGenericLabel(title)) title = url.hostname.replace(/^www\./, '');
-  return title;
+  if (title) {
+    const parts = title.split(/[\|–—·»]/);
+    title = parts[0].trim();
+    // If the first part is generic, try the second
+    if (isGenericName(title) && parts.length > 1) title = parts[1].trim();
+    if (title && title.length >= 2 && title.length <= 80 && !isGenericName(title)) return title;
+  }
+
+  // 5) Fallback to pretty hostname
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').split('.')[0];
+  } catch {
+    return '';
+  }
 }
 
-function stripTags(html) {
-  return html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ');
+function isGenericName(s) {
+  if (!s) return true;
+  const lower = s.toLowerCase().trim();
+  return /^(kontakt|contact|forside|home|om os|about|menu|navigation|header|footer|cookie|søg|search|login|links|oversigt|medlemsliste|bestyrelsen|bestyrelse|læs mere|start|velkommen|welcome|email|e-mail|telefon|adresse|nyhedsbrev|newsletter|blog|nyheder|privacy|log ind|tilmeld)$/i.test(lower)
+    || lower.length < 2;
+}
+
+// ─── Email validation ─────────────────────────────────────────────────────────
+// Very strict: must be a real, clean email. No URL-encoded chars, no technical/system emails.
+function isValidLeadEmail(email) {
+  if (!email) return false;
+
+  // Must not contain URL-encoded characters (%20, %40 etc.)
+  if (/%[0-9a-fA-F]{2}/.test(email)) return false;
+
+  // Must not start with spaces or have spaces
+  if (/\s/.test(email)) return false;
+
+  // Basic format check
+  if (!/^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email)) return false;
+
+  // Reject system/noreply emails
+  const local = email.split('@')[0].toLowerCase();
+  if (/^(noreply|no-reply|donotreply|postmaster|mailer-daemon|bounce|abuse|root|admin|webmaster|hostmaster|support|test|example|spam|null|void)$/.test(local)) return false;
+
+  // Reject emails from known technical domains
+  const domain = email.split('@')[1].toLowerCase();
+  if (/wixpress\.com|sentry\.|rollbar\.|bugsnag\.|datadog\.|newrelic\.|cloudflare\.|amazonaws\.|googleapis\.com|github\.com|githubusercontent\.com|facebook\.com|twitter\.com|example\.com|localhost/i.test(domain)) return false;
+
+  // Domain must have a reasonable TLD
+  const tld = domain.split('.').pop();
+  if (tld.length < 2 || tld.length > 10) return false;
+
+  return true;
+}
+
+// Should we treat this email as a "functional" email (bestyrelse@, regnskab@, some@) ?
+// Functional emails from the SAME domain as the source page are usually not separate leads,
+// they are all just department emails for one organization.
+function isFunctionalEmail(email) {
+  const local = email.split('@')[0].toLowerCase();
+  return /^(bestyrelse|regnskab|branchedag|kommunikation|some|info|kontakt|salg|support|booking|mail|kontor|administration|sekretariat|forening|henvendelse|reception|post|faktura|marked|marketing|hr|drift|it|web|social|medier|event|kursus|pr|presse|nyhed|nyhedsbrev|newsletter)$/.test(local);
 }
 
 // ─── Auto category detection ─────────────────────────────────────────────────
-// Returns a broad category string based on keywords found in the page text/title
 const CAT_RULES = [
-  { pattern: /surf|kitesurfing|windsurfing|wakeboard|vandski|sup\b|paddleboard/i, cat: 'Skoler & klubber' },
-  { pattern: /kajak|kano|padling|kayak/i, cat: 'Kajakklubber' },
-  { pattern: /spejder|scout/i, cat: 'Spejdergrupper' },
-  { pattern: /folkeskole|grundskole|primary school/i, cat: 'Folkeskoler' },
-  { pattern: /børnehave|dagtilbud|daycare|vuggestue|sfo\b/i, cat: 'Børnehaver' },
+  { pattern: /yoga|yogastudio|yogaskole|vinyasa|ashtanga|hatha|yin\s*yoga|power\s*yoga|hot\s*yoga/i, cat: 'Yoga & Pilates' },
+  { pattern: /pilates|pilatesstudio/i, cat: 'Yoga & Pilates' },
+  { pattern: /surf|kitesurfing|windsurfing|wakeboard|vandski|kiteboarding/i, cat: 'Skoler & Klubber' },
+  { pattern: /sup\b|paddleboard|stand.up.paddle/i, cat: 'Skoler & Klubber' },
+  { pattern: /kajak|kano|padling|kayak|kajakklub/i, cat: 'Kajakklubber' },
+  { pattern: /spejder|scout|spejdergruppe/i, cat: 'Spejdergrupper' },
+  { pattern: /folkeskole|grundskole|primary.school|friskole|privatskole/i, cat: 'Folkeskoler' },
+  { pattern: /børnehave|dagtilbud|daycare|vuggestue|\bsfo\b|daginstitution/i, cat: 'Børnehaver' },
   { pattern: /efterskole/i, cat: 'Efterskoler' },
-  { pattern: /gymnasium|htx|hhx|stx|gymnasial/i, cat: 'Gymnasium' },
+  { pattern: /gymnasium|\bhtx\b|\bhhx\b|\bstx\b|gymnasial/i, cat: 'Gymnasium' },
   { pattern: /højskole|folkehøjskole/i, cat: 'Højskoler' },
-  { pattern: /naturskole|naturcenter|naturstyrelsen|bæredygtighed|friluftsliv/i, cat: 'Naturskoler & Naturcentre' },
-  { pattern: /skatepark|skateboard/i, cat: 'Skateparks' },
-  { pattern: /havn\b|marina|sejlklub|sejlsport/i, cat: 'Havne' },
-  { pattern: /webshop|webbutik|nettbutik|e-handel/i, cat: 'Butik & Webshop' },
-  { pattern: /butik|forhandler|shop\b|retailer/i, cat: 'Butik & Webshop' },
-  { pattern: /drage|legetøj|kite\b/i, cat: 'Drager & Legetøj' },
+  { pattern: /naturskole|naturcenter|naturstyrelsen|friluftsliv|naturvejleder/i, cat: 'Naturskoler & Naturcentre' },
+  { pattern: /skatepark|skateboard|skating/i, cat: 'Skateparks' },
+  { pattern: /\bhavn\b|marina|sejlklub|sejlsport|lystbådehavn/i, cat: 'Havne' },
+  { pattern: /webshop|webbutik|nettbutik|e-handel|onlinebutik/i, cat: 'Butik & Webshop' },
+  { pattern: /butik|forhandler|retailer/i, cat: 'Butik & Webshop' },
+  { pattern: /drage|legetøj|dragebutik/i, cat: 'Drager & Legetøj' },
   { pattern: /indkøbsforening|indkøbsfællesskab/i, cat: 'Indkøbsforeninger' },
-  { pattern: /skole\b|club\b|klub\b|forening\b|association|organisation/i, cat: 'Skoler & klubber' },
+  { pattern: /vinterbade|badeklub|badelaug|vinterbadning|havbad/i, cat: 'Skoler & Klubber' },
+  { pattern: /fitness|crossfit|træningscenter|motionscenter|fitnesscenter/i, cat: 'Fitness & Træning' },
+  { pattern: /dans|danseskole|ballet/i, cat: 'Danseskoler' },
+  { pattern: /svømme|svømmeklub|svømning|swimming/i, cat: 'Svømmeklubber' },
+  { pattern: /rideklub|rideskole|hestesport|ridning/i, cat: 'Rideklubber' },
+  { pattern: /golf|golfklub/i, cat: 'Golfklubber' },
+  { pattern: /tennis|tennisklub/i, cat: 'Tennisklubber' },
+  { pattern: /dykning|dykkerklub|scuba|snorkel/i, cat: 'Dykkerklubber' },
+  { pattern: /camping|campingplads/i, cat: 'Campingpladser' },
+  { pattern: /hotel|vandrehjem|hostel|overnatning/i, cat: 'Overnatning' },
+  { pattern: /museum|udstilling|galleri/i, cat: 'Museer & Kultur' },
+  { pattern: /fodbold|fodboldklub|boldklub/i, cat: 'Fodboldklubber' },
+  { pattern: /håndbold|håndboldklub/i, cat: 'Håndboldklubber' },
+  { pattern: /klub\b|forening\b|idræt|sport/i, cat: 'Skoler & Klubber' },
+  { pattern: /skole\b|uddannelse|kursus/i, cat: 'Skoler & Klubber' },
 ];
 
-function detectCategory(html, title) {
-  const text = (title + ' ' + stripTags(html)).slice(0, 5000);
+function detectCategory(textContent) {
+  const text = (textContent || '').slice(0, 8000).toLowerCase();
   for (const rule of CAT_RULES) {
     if (rule.pattern.test(text)) return rule.cat;
   }
-  return '';
+  return 'Andet';
 }
 
 // ─── Link extraction ──────────────────────────────────────────────────────────
@@ -67,46 +161,32 @@ function extractLinks(html, baseUrl, options = {}) {
   const {
     sameHostOnly = true,
     maxLinks = 50,
-    priorityPatterns = [],
-    skipPatterns = [],
     externalOnly = false,
   } = options;
 
   const base = new URL(baseUrl);
   const result = [];
   const seen = new Set();
-  const re = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const re = /<a\s+[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
 
   while ((m = re.exec(html)) && result.length < maxLinks) {
     const href = m[1].trim();
-    const text = m[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    const text = stripTags(m[2]).trim();
     try {
       const url = new URL(href, base);
       if (url.protocol !== 'http:' && url.protocol !== 'https:') continue;
-      if (url.hash && url.pathname === base.pathname) continue;
       const isSame = url.hostname === base.hostname;
       if (sameHostOnly && !isSame) continue;
       if (externalOnly && isSame) continue;
       const key = url.origin + url.pathname;
       if (seen.has(key)) continue;
-      // skip obvious non-content paths
-      if (/\.(pdf|jpg|jpeg|png|gif|svg|css|js|woff|ico|xml|zip)$/i.test(url.pathname)) continue;
-      if (skipPatterns.some(p => p.test(url.pathname + url.search))) continue;
+      if (/\.(pdf|jpg|jpeg|png|gif|svg|css|js|woff|ico|xml|zip|mp3|mp4|avi)$/i.test(url.pathname)) continue;
+      // Skip social media and well-known non-lead sites
+      if (/facebook\.com|instagram\.com|twitter\.com|linkedin\.com|youtube\.com|google\.|maps\.google|tiktok\.com|pinterest\.com|wikipedia\./i.test(url.hostname)) continue;
       seen.add(key);
       result.push({ url: url.toString(), text });
-    } catch {
-      // ignore invalid
-    }
-  }
-
-  // Sort by priority patterns first
-  if (priorityPatterns.length) {
-    result.sort((a, b) => {
-      const aP = priorityPatterns.some(p => p.test(a.url)) ? 0 : 1;
-      const bP = priorityPatterns.some(p => p.test(b.url)) ? 0 : 1;
-      return aP - bP;
-    });
+    } catch { /* ignore */ }
   }
 
   return result;
@@ -115,18 +195,17 @@ function extractLinks(html, baseUrl, options = {}) {
 // ─── Google search result extraction ─────────────────────────────────────────
 
 function extractGoogleResults(html) {
-  // Google result links appear as /url?q=... or direct href to external sites
   const urls = [];
   const seen = new Set();
 
-  // Pattern 1: /url?q=https://... links
+  // Pattern: /url?q=https://... links (Google wraps results this way)
   const re1 = /\/url\?q=(https?:\/\/[^&"]+)/gi;
   let m;
   while ((m = re1.exec(html))) {
     try {
       const url = decodeURIComponent(m[1]);
       const parsed = new URL(url);
-      if (parsed.hostname.includes('google.') || parsed.hostname.includes('youtube.') || parsed.hostname.includes('wikipedia.')) continue;
+      if (/google\.|youtube\.|wikipedia\.|facebook\.|instagram\.|twitter\.|linkedin\./i.test(parsed.hostname)) continue;
       const key = parsed.origin + parsed.pathname;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -134,14 +213,13 @@ function extractGoogleResults(html) {
     } catch { /* ignore */ }
   }
 
-  // Pattern 2: Direct href links that are clearly not Google-internal
+  // Fallback: direct href links
   if (urls.length < 3) {
-    const re2 = /href="(https?:\/\/(?!(?:www\.)?google\.[a-z]+)[^"]+)"/gi;
+    const re2 = /href="(https?:\/\/[^"]+)"/gi;
     while ((m = re2.exec(html)) && urls.length < 30) {
       try {
-        const url = m[1];
-        const parsed = new URL(url);
-        if (parsed.hostname.includes('google.') || parsed.hostname.includes('youtube.') || parsed.hostname.includes('wikipedia.') || parsed.hostname.includes('facebook.') || parsed.hostname.includes('instagram.')) continue;
+        const parsed = new URL(m[1]);
+        if (/google\.|youtube\.|wikipedia\.|facebook\.|instagram\.|twitter\.|linkedin\./i.test(parsed.hostname)) continue;
         const key = parsed.origin + parsed.pathname;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -154,124 +232,84 @@ function extractGoogleResults(html) {
 }
 
 function isGoogleSearchUrl(url) {
-  return /google\.[a-z]+\/search/i.test(url) ||
-    /google\.[a-z]+\/\?/i.test(url) ||
-    /google\.[a-z]+\/\#/i.test(url);
+  return /google\.[a-z.]+\/search/i.test(url);
 }
 
-// ─── Score a name candidate ───────────────────────────────────────────────────
+// ─── Extract emails from HTML with strict validation ──────────────────────────
 
-function scoreName(candidate) {
-  if (!candidate || candidate.length < 2) return 0;
-  let s = 0;
-  const len = candidate.length;
-  if (len >= 3 && len <= 80) s += 2;
-  if (/\b[A-ZÆØÅ]/.test(candidate)) s += 2;
-  const words = candidate.split(/\s+/);
-  if (words.length >= 1 && words.length <= 8) s += 1;
-  if (!/[.@:]/.test(candidate)) s += 2;
-  if (/[A-Za-zÆØÅæøå]{3}/.test(candidate)) s += 1;
-  const digits = (candidate.match(/\d/g) || []).length;
-  if (digits > 0 && digits >= candidate.replace(/\s/g, '').length / 2) s -= 3;
-  // penalize generic labels
-  if (isGenericLabel(candidate)) s -= 5;
-  return s;
-}
+function extractEmailsFromHtml(html) {
+  const emails = new Set();
+  // First decode any URL-encoded content in the HTML
+  let decoded = html;
+  try {
+    // Decode common HTML entities and URL-encoded parts
+    decoded = decoded.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n));
+    decoded = decoded.replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
+  } catch { /* ignore */ }
 
-// ─── Extract contacts from HTML ───────────────────────────────────────────────
-
-function extractContacts(html, fallbackName, sourceUrl) {
-  const safeFallback = (isGenericLabel(fallbackName) ? '' : (fallbackName || '')).slice(0, 100);
-  const contactsMap = new Map();
-  const emailRe = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi;
-  const plainText = stripTags(html);
+  const re = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi;
   let m;
-
-  while ((m = emailRe.exec(html))) {
-    const email = m[0].toLowerCase().trim();
-    
-    // Filter obviously bad emails
-    if (/^(noreply|no-reply|donotreply|example|test@|info@example|user@example)/i.test(email)) continue;
-    if (/\.(png|jpg|gif|svg|js|css|woff)$/i.test(email)) continue;
-    const domain = email.split('@')[1] || '';
-    if (/wixpress\.com|sentry\.|rollbar\.|bugsnag\.|datadog\.|newrelic\.|cloudflare\.|amazonaws\.|githubusercontent\.com/i.test(domain)) continue;
-    if (domain.split('.').some(p => p.length > 30)) continue;
-
-    const idx = m.index;
-    const windowStart = Math.max(0, idx - 1200);
-    const windowEnd = Math.min(html.length, idx + 400);
-    const snippet = html.slice(windowStart, windowEnd);
-
-    // Extract best name from surrounding HTML text nodes
-    let bestName = '';
-    let bestScore = -99;
-    const textRe = />([^<>]{2,120})</g;
-    let tm;
-    while ((tm = textRe.exec(snippet))) {
-      const candidate = tm[1].replace(/&nbsp;/g, ' ').replace(/&[a-z]+;/gi, '').replace(/\s+/g, ' ').trim();
-      if (!candidate || candidate.includes('@') || candidate.includes('http')) continue;
-      const score = scoreName(candidate);
-      if (score > bestScore) {
-        bestScore = score;
-        bestName = candidate;
-      }
+  while ((m = re.exec(decoded))) {
+    let email = m[0].toLowerCase().trim();
+    // Clean up: remove trailing dots or dashes
+    email = email.replace(/[.\-]+$/, '');
+    if (isValidLeadEmail(email)) {
+      emails.add(email);
     }
-    const name = (bestName && bestScore >= 3) ? bestName : safeFallback;
-
-    // Phone: look for Danish format in surrounding text
-    let phone = '';
-    const phonePatterns = [
-      /(?:tlf\.?|telefon|phone|mobil|tel\.?)\s*:?\s*(\+?[\d][\d\s\-\/]{6,14})/i,
-      /\b(\+45[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})\b/,
-      /\b([\d]{2}[\s\-]?[\d]{2}[\s\-]?[\d]{2}[\s\-]?[\d]{2})\b/,
-    ];
-    for (const pat of phonePatterns) {
-      const pm = snippet.match(pat);
-      if (pm) {
-        const raw = pm[1].trim();
-        const digits = raw.replace(/\D/g, '');
-        if (/^(45)?\d{8}$/.test(digits)) {
-          if (digits.length === 10 && digits.startsWith('45')) {
-            phone = '+45 ' + digits.slice(2, 4) + ' ' + digits.slice(4, 6) + ' ' + digits.slice(6, 8) + ' ' + digits.slice(8);
-          } else if (digits.length === 8) {
-            phone = digits.slice(0,2) + ' ' + digits.slice(2,4) + ' ' + digits.slice(4,6) + ' ' + digits.slice(6);
-          }
-          break;
-        }
-      }
-    }
-
-    // City: match Danish postal code + city (e.g. "8000 Aarhus C")
-    let city = '';
-    const cm = snippet.match(/\b(\d{4})\s+([A-ZÆØÅ][A-Za-zÆØÅæøå\s\-]{2,25})/);
-    if (cm) city = cm[0].trim().replace(/\s+/g, ' ');
-
-    // Contact person
-    let contact_person = '';
-    const cpm = snippet.match(/(?:kontaktperson|ejer|formand|daglig leder|leder|direktør|contact person)[:\s]*([^<\n\r]{3,80})/i);
-    if (cpm) contact_person = cpm[1].replace(/<[^>]+>/g, '').trim().split('\n')[0].trim();
-
-    // Website from source
-    let website = '';
-    try {
-      if (sourceUrl) {
-        const su = new URL(sourceUrl);
-        website = su.origin;
-      }
-    } catch { /* ignore */ }
-
-    const existing = contactsMap.get(email) || {};
-    contactsMap.set(email, {
-      email,
-      name: name || existing.name || safeFallback || '',
-      phone: existing.phone || phone,
-      city: existing.city || city,
-      contact_person: existing.contact_person || contact_person,
-      website: existing.website || website,
-    });
   }
 
-  return [...contactsMap.values()];
+  // Also try mailto: links which are the most reliable source
+  const mailtoRe = /mailto:([^"'?&\s]+)/gi;
+  while ((m = mailtoRe.exec(html))) {
+    let email = decodeURIComponent(m[1]).toLowerCase().trim();
+    email = email.replace(/[.\-]+$/, '');
+    if (isValidLeadEmail(email)) {
+      emails.add(email);
+    }
+  }
+
+  return [...emails];
+}
+
+// ─── Phone extraction (no +45 prefix) ─────────────────────────────────────────
+
+function extractPhone(html) {
+  const text = stripTags(html);
+  const patterns = [
+    /(?:tlf\.?|telefon|phone|mobil|tel\.?)\s*:?\s*\+?45\s*([\d\s\-]{8,})/i,
+    /(?:tlf\.?|telefon|phone|mobil|tel\.?)\s*:?\s*([\d\s\-]{8,14})/i,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (m) {
+      let digits = m[1].replace(/\D/g, '');
+      // Remove leading 45 country code if present
+      if (digits.length === 10 && digits.startsWith('45')) digits = digits.slice(2);
+      if (digits.length === 8) {
+        return digits.slice(0, 2) + ' ' + digits.slice(2, 4) + ' ' + digits.slice(4, 6) + ' ' + digits.slice(6);
+      }
+    }
+  }
+
+  // Try to find a standalone 8-digit phone number near "tlf" or "telefon"
+  const m2 = text.match(/(?:tlf|telefon|phone|mobil|ring|tel)[^0-9]{0,20}(\d{2}\s?\d{2}\s?\d{2}\s?\d{2})/i);
+  if (m2) {
+    const digits = m2[1].replace(/\D/g, '');
+    if (digits.length === 8) {
+      return digits.slice(0, 2) + ' ' + digits.slice(2, 4) + ' ' + digits.slice(4, 6) + ' ' + digits.slice(6);
+    }
+  }
+
+  return '';
+}
+
+// ─── City extraction ──────────────────────────────────────────────────────────
+
+function extractCity(html) {
+  const text = stripTags(html);
+  const m = text.match(/\b(\d{4})\s+([A-ZÆØÅ][A-Za-zÆØÅæøå\s\-]{2,25})\b/);
+  if (m) return m[0].trim().replace(/\s+/g, ' ');
+  return '';
 }
 
 // ─── Safe fetch with timeout ──────────────────────────────────────────────────
@@ -283,204 +321,254 @@ async function safeFetch(url, timeoutMs = 12000) {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SurfmoreCRM/2.0; +https://surfmore.dk)',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'da,en;q=0.8',
       },
+      redirect: 'follow',
     });
     clearTimeout(timer);
-    return res;
-  } catch (e) {
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) {
+      return null;
+    }
+    return await res.text();
+  } catch {
     clearTimeout(timer);
-    throw e;
+    return null;
   }
 }
 
-// ─── Scrape a single site (up to 3 levels deep) ──────────────────────────────
+// ─── Scrape ONE organization/business page ────────────────────────────────────
+// Given a page URL, extract the BEST contact email for that organization.
+// Strategy:
+//   - The NAME is the page/site name (from og:site_name, title, h1)
+//   - Check front page + contact pages for emails
+//   - Group all emails from same domain → pick the best one (prefer info@, kontakt@, or the first mailto: link)
+//   - ONE lead per organization, not one per email found!
 
-async function scrapeSite(startUrl, category, country) {
+async function scrapeOneSite(siteUrl) {
+  const html = await safeFetch(siteUrl);
+  if (!html) return null;
+
+  const url = new URL(siteUrl);
+  const name = extractPageName(html, siteUrl);
+  const textContent = name + ' ' + stripTags(html).slice(0, 6000);
+  const category = detectCategory(textContent);
+
+  // Collect emails from front page
+  let allEmails = extractEmailsFromHtml(html);
+
+  // Find and scrape contact/about pages on same domain
+  const contactLinks = extractLinks(html, siteUrl, { sameHostOnly: true, maxLinks: 30 })
+    .filter(l => /kontakt|contact|om-os|om\b|about|reach|connect/i.test(l.url))
+    .slice(0, 4);
+
+  let contactPageHtml = '';
+  for (const link of contactLinks) {
+    const subHtml = await safeFetch(link.url, 8000);
+    if (subHtml) {
+      contactPageHtml += subHtml;
+      const subEmails = extractEmailsFromHtml(subHtml);
+      allEmails = allEmails.concat(subEmails);
+    }
+  }
+
+  // Deduplicate
+  allEmails = [...new Set(allEmails)];
+
+  if (allEmails.length === 0) return null; // NO email found → no lead!
+
+  // Filter functional emails from the SITE'S OWN domain → keep only the best one
+  const siteDomain = url.hostname.replace(/^www\./, '');
+  const ownDomainEmails = allEmails.filter(e => e.endsWith('@' + siteDomain));
+  const externalEmails = allEmails.filter(e => !e.endsWith('@' + siteDomain));
+
+  // Pick the best email:
+  // Priority: info@ or kontakt@ from own domain → first non-functional own domain email → first external email
+  let bestEmail = '';
+  if (ownDomainEmails.length > 0) {
+    const preferred = ownDomainEmails.find(e => /^(info|kontakt|mail|kontor|hej|hello)@/i.test(e));
+    bestEmail = preferred || ownDomainEmails.find(e => !isFunctionalEmail(e)) || ownDomainEmails[0];
+  } else if (externalEmails.length > 0) {
+    bestEmail = externalEmails[0];
+  }
+
+  if (!bestEmail) return null;
+
+  // Phone & city
+  const allHtml = html + contactPageHtml;
+  const phone = extractPhone(allHtml);
+  const city = extractCity(allHtml);
+
+  // Website = the site's own URL
+  const website = url.origin;
+
+  return {
+    name: name || '',
+    email: bestEmail,
+    phone,
+    city,
+    category,
+    website,
+    sourceUrl: siteUrl,
+    contact_person: '', // only if we can clearly find one
+  };
+}
+
+// ─── Scrape a LISTING/DIRECTORY page ──────────────────────────────────────────
+// When the user gives us a page that LISTS many organizations (e.g. a directory),
+// we find external links on that page and scrape each one as a separate org.
+
+async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   const results = [];
   const errors = [];
 
-  let html, url;
-  try {
-    url = new URL(startUrl);
-    const res = await safeFetch(url.toString());
-    if (!res.ok) { errors.push({ url: url.toString(), reason: 'http_' + res.status }); return { results, errors }; }
-    html = await res.text();
-  } catch (e) {
-    errors.push({ url: startUrl, reason: e.name === 'AbortError' ? 'timeout' : (e.message || 'fetch_error') });
+  const html = await safeFetch(pageUrl);
+  if (!html) {
+    errors.push({ url: pageUrl, reason: 'could_not_fetch' });
     return { results, errors };
   }
 
-  const siteName = buildName(html, url);
-  const autoCategory = category || detectCategory(html, siteName);
-  const websiteOrigin = url.origin;
+  const pageUrl_ = new URL(pageUrl);
+  const pageName = extractPageName(html, pageUrl);
+  const pageText = pageName + ' ' + stripTags(html).slice(0, 6000);
+  const pageCategory = overrideCategory || detectCategory(pageText);
 
-  // Helper to add contacts from HTML + source URL
-  const addContacts = (contacts, sourceUrl, overrideName) => {
-    const dedupKey = (c) => c.email;
-    for (const c of contacts) {
-      if (results.some(r => r.email === c.email)) continue;
-      results.push({
-        sourceUrl,
-        name: overrideName || c.name || siteName,
-        category: autoCategory,
-        country: country || '',
-        email: c.email,
-        phone: c.phone || '',
-        city: c.city || '',
-        website: c.website || websiteOrigin,
-        contact_person: c.contact_person || '',
-      });
-    }
-  };
+  // Check: does THIS page itself have a lead email? (it might be a single org)
+  const pageEmails = extractEmailsFromHtml(html);
+  const pageDomain = pageUrl_.hostname.replace(/^www\./, '');
+  const relevantPageEmails = pageEmails.filter(e => {
+    if (!isValidLeadEmail(e)) return false;
+    return true;
+  });
 
-  // 1) Contacts directly on front page
-  const frontContacts = extractContacts(html, siteName, url.toString());
-  addContacts(frontContacts, url.toString());
-
-  // 2) Priority contact/about sub-pages on same domain
-  const contactSubLinks = extractLinks(html, url.toString(), {
-    sameHostOnly: true,
-    maxLinks: 60,
-    priorityPatterns: [/kontakt|contact|om-os|om\b|about|reach/i],
-    skipPatterns: [/login|sign-in|cookie|privacy|pay|checkout|cart|blog|news|nyheder/i],
-  })
-    .filter(l => /kontakt|contact|om-os|om\b|about|reach/i.test(l.url))
-    .slice(0, 5);
-
-  for (const link of contactSubLinks) {
-    try {
-      const r = await safeFetch(link.url);
-      if (!r.ok) continue;
-      const subHtml = await r.text();
-      const subContacts = extractContacts(subHtml, siteName, link.url);
-      addContacts(subContacts, link.url);
-    } catch { /* ignore */ }
-  }
-
-  // 3) All other internal subpages (for detail-list pages like directory sites)
-  const internalLinks = extractLinks(html, url.toString(), {
-    sameHostOnly: true,
-    maxLinks: 80,
-    skipPatterns: [/login|sign-in|cookie|privacy|pay|checkout|cart|#/i],
-  }).slice(0, 40);
-
-  for (const link of internalLinks) {
-    // only crawl if we haven't been here
-    if (results.some(r => r.sourceUrl === link.url)) continue;
-    try {
-      const r = await safeFetch(link.url, 8000);
-      if (!r.ok) continue;
-      const subHtml = await r.text();
-      const subUrl = new URL(link.url);
-      const subName = buildName(subHtml, subUrl);
-      const subContacts = extractContacts(subHtml, subName, link.url);
-
-      // For each found subpage contact, also check external links on this subpage
-      if (subContacts.length > 0) {
-        addContacts(subContacts, link.url, link.text || undefined);
-      } else {
-        // No contacts on subpage → follow external links (e.g. member own website)
-        const extLinks = extractLinks(subHtml, link.url, {
-          externalOnly: true,
-          sameHostOnly: false,
-          maxLinks: 10,
-          skipPatterns: [/facebook|instagram|twitter|linkedin|youtube|google|maps/i],
-        }).slice(0, 3);
-
-        for (const ext of extLinks) {
-          try {
-            const re = await safeFetch(ext.url, 8000);
-            if (!re.ok) continue;
-            const extHtml = await re.text();
-            const extUrl = new URL(ext.url);
-            const extName = buildName(extHtml, extUrl);
-            const baseName = link.text || ext.text || extName;
-            const extContacts = extractContacts(extHtml, baseName, ext.url);
-
-            // Also check contact page on external site
-            if (extContacts.length === 0) {
-              const extContactLinks = extractLinks(extHtml, ext.url, {
-                sameHostOnly: true,
-                maxLinks: 20,
-                priorityPatterns: [/kontakt|contact|om-os|om\b|about/i],
-                skipPatterns: [],
-              }).filter(l => /kontakt|contact|om-os|om\b|about/i.test(l.url)).slice(0, 2);
-
-              for (const ecl of extContactLinks) {
-                try {
-                  const rEc = await safeFetch(ecl.url, 7000);
-                  if (!rEc.ok) continue;
-                  const eclHtml = await rEc.text();
-                  const eclContacts = extractContacts(eclHtml, baseName, ext.url);
-                  addContacts(eclContacts, ext.url, baseName || undefined);
-                } catch { /* ignore */ }
-              }
-            } else {
-              addContacts(extContacts, ext.url, baseName || undefined);
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch { /* ignore */ }
-  }
-
-  // 4) External links directly on the front page (e.g. member directory)
-  const extOnFront = extractLinks(html, url.toString(), {
+  // Find external links (= potential member/org websites)
+  const externalLinks = extractLinks(html, pageUrl, {
     externalOnly: true,
     sameHostOnly: false,
     maxLinks: 200,
-    skipPatterns: [/facebook|instagram|twitter|linkedin|youtube|google|maps|wikipedia/i],
   }).slice(0, 60);
 
-  for (const site of extOnFront) {
-    if (results.some(r => r.website && r.website.startsWith(new URL(site.url).origin))) continue;
+  // Find internal detail links (subpages that might link to individual orgs)
+  const internalLinks = extractLinks(html, pageUrl, {
+    sameHostOnly: true,
+    maxLinks: 80,
+  }).filter(l => {
+    const path = new URL(l.url).pathname;
+    // Skip generic pages
+    if (/^\/$|kontakt|contact|cookie|privacy|login|om-os|about|pay|cart|checkout/i.test(path)) return false;
+    return path.length > 1;
+  }).slice(0, 40);
+
+  // Determine if this is a directory page or a single-org page
+  const isDirectory = externalLinks.length >= 3 || internalLinks.length >= 5;
+
+  if (!isDirectory) {
+    // Single org page → scrape this page directly
+    const lead = await scrapeOneSite(pageUrl);
+    if (lead) {
+      lead.category = overrideCategory || lead.category;
+      lead.country = country || '';
+      lead.website = ''; // it IS the source URL, don't duplicate
+      results.push(lead);
+    }
+    return { results, errors };
+  }
+
+  // ── Directory mode: scrape each external link as a separate org ──
+  for (const link of externalLinks) {
     try {
-      const r = await safeFetch(site.url, 9000);
-      if (!r.ok) continue;
-      const extHtml = await r.text();
-      const extUrl = new URL(site.url);
-      const extName = buildName(extHtml, extUrl);
-      const baseName = site.text || extName;
-      const extCat = category || detectCategory(extHtml, baseName);
-      let extContacts = extractContacts(extHtml, baseName, site.url);
+      const lead = await scrapeOneSite(link.url);
+      if (lead) {
+        // Use the link text as name if our extraction got garbage
+        if (link.text && link.text.length >= 2 && link.text.length <= 60 && !isGenericName(link.text)) {
+          // If extracted name is generic, use link text
+          if (!lead.name || isGenericName(lead.name)) {
+            lead.name = link.text;
+          }
+        }
+        lead.category = overrideCategory || lead.category || pageCategory;
+        lead.country = country || '';
+        results.push(lead);
+      }
+    } catch { /* ignore */ }
+  }
 
-      // Contact subpage on external site
-      if (extContacts.length === 0) {
-        const cLinks = extractLinks(extHtml, site.url, {
-          sameHostOnly: true,
-          maxLinks: 20,
-          priorityPatterns: [/kontakt|contact|om-os|about/i],
-          skipPatterns: [],
-        }).filter(l => /kontakt|contact|om-os|about/i.test(l.url)).slice(0, 2);
+  // ── Also check internal detail pages for org info or external links ──
+  for (const link of internalLinks.slice(0, 25)) {
+    try {
+      const subHtml = await safeFetch(link.url, 8000);
+      if (!subHtml) continue;
 
-        for (const cl of cLinks) {
-          try {
-            const rC = await safeFetch(cl.url, 7000);
-            if (!rC.ok) continue;
-            const cHtml = await rC.text();
-            extContacts = extContacts.concat(extractContacts(cHtml, baseName, site.url));
-          } catch { /* ignore */ }
+      const subUrl = new URL(link.url);
+      const subName = extractPageName(subHtml, link.url);
+
+      // Does this subpage have its own emails?
+      const subEmails = extractEmailsFromHtml(subHtml);
+      const subDomain = subUrl.hostname.replace(/^www\./, '');
+      // Filter out emails from the parent site domain (those are the listing site's emails, not leads)
+      const leadEmails = subEmails.filter(e => !e.endsWith('@' + pageDomain) || pageDomain === subDomain);
+
+      if (leadEmails.length > 0) {
+        // Check if we already have this email
+        const bestEmail = leadEmails.find(e => /^(info|kontakt|mail|kontor|hej|hello)@/i.test(e))
+          || leadEmails.find(e => !isFunctionalEmail(e))
+          || leadEmails[0];
+
+        if (bestEmail && !results.some(r => r.email === bestEmail)) {
+          const phone = extractPhone(subHtml);
+          const city = extractCity(subHtml);
+          const name = (link.text && !isGenericName(link.text)) ? link.text : subName;
+
+          results.push({
+            name: name || '',
+            email: bestEmail,
+            phone,
+            city,
+            category: overrideCategory || detectCategory(subName + ' ' + stripTags(subHtml).slice(0, 3000)) || pageCategory,
+            website: '', // internal page, no separate website
+            sourceUrl: link.url,
+            contact_person: '',
+            country: country || '',
+          });
         }
       }
 
-      for (const c of extContacts) {
-        if (results.some(r => r.email === c.email)) continue;
-        results.push({
-          sourceUrl: site.url,
-          name: c.name || baseName,
-          category: extCat || autoCategory,
-          country: country || '',
-          email: c.email,
-          phone: c.phone || '',
-          city: c.city || '',
-          website: c.website || new URL(site.url).origin,
-          contact_person: c.contact_person || '',
-        });
+      // Also follow external links FROM this subpage
+      const subExternals = extractLinks(subHtml, link.url, {
+        externalOnly: true,
+        sameHostOnly: false,
+        maxLinks: 10,
+      }).slice(0, 3);
+
+      for (const ext of subExternals) {
+        if (results.some(r => r.website === new URL(ext.url).origin)) continue;
+        try {
+          const lead = await scrapeOneSite(ext.url);
+          if (lead && !results.some(r => r.email === lead.email)) {
+            if (ext.text && ext.text.length >= 2 && !isGenericName(ext.text) && (!lead.name || isGenericName(lead.name))) {
+              lead.name = ext.text;
+            }
+            lead.category = overrideCategory || lead.category || pageCategory;
+            lead.country = country || '';
+            results.push(lead);
+          }
+        } catch { /* ignore */ }
       }
     } catch { /* ignore */ }
+  }
+
+  // If still no results, try the page itself as a single org
+  if (results.length === 0) {
+    const lead = await scrapeOneSite(pageUrl);
+    if (lead) {
+      lead.category = overrideCategory || lead.category;
+      lead.country = country || '';
+      lead.website = '';
+      results.push(lead);
+    }
   }
 
   return { results, errors };
@@ -507,46 +595,30 @@ export async function POST(req) {
     if (!norm) continue;
 
     try {
-      const parsedUrl = new URL(norm);
-
       if (isGoogleSearchUrl(norm)) {
-        // ── Handle Google Search URL ──
-        let searchHtml;
-        try {
-          const res = await safeFetch(norm, 15000);
-          if (!res.ok) { allErrors.push({ url: norm, reason: 'http_' + res.status }); continue; }
-          searchHtml = await res.text();
-        } catch (e) {
-          allErrors.push({ url: norm, reason: e.name === 'AbortError' ? 'timeout' : (e.message || 'error') });
-          continue;
-        }
+        // ── Google Search URL ──
+        let searchHtml = await safeFetch(norm, 15000);
+        if (!searchHtml) { allErrors.push({ url: norm, reason: 'could_not_fetch_search' }); continue; }
 
         const resultUrls = extractGoogleResults(searchHtml);
 
-        // Also try next pages (page 2 and 3)
-        const nextPageLinks = extractLinks(searchHtml, norm, {
-          sameHostOnly: true,
-          maxLinks: 10,
-          skipPatterns: [],
-        }).filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 2);
+        // Try page 2 and 3
+        const nextPages = extractLinks(searchHtml, norm, { sameHostOnly: true, maxLinks: 10 })
+          .filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 2);
 
-        for (const nextPage of nextPageLinks) {
-          try {
-            const rN = await safeFetch(nextPage.url, 12000);
-            if (rN.ok) {
-              const nHtml = await rN.text();
-              const moreUrls = extractGoogleResults(nHtml);
-              for (const u of moreUrls) {
-                if (!resultUrls.includes(u)) resultUrls.push(u);
-              }
-            }
-          } catch { /* ignore */ }
+        for (const np of nextPages) {
+          const nHtml = await safeFetch(np.url, 12000);
+          if (nHtml) {
+            extractGoogleResults(nHtml).forEach(u => {
+              if (!resultUrls.includes(u)) resultUrls.push(u);
+            });
+          }
         }
 
-        // Scrape each result
-        for (const resultUrl of resultUrls.slice(0, 30)) {
+        // Scrape each Google result
+        for (const resultUrl of resultUrls.slice(0, 25)) {
           try {
-            const { results, errors } = await scrapeSite(resultUrl, category, country);
+            const { results, errors } = await scrapeDirectoryPage(resultUrl, category, country);
             for (const r of results) {
               if (!allResults.some(x => x.email === r.email)) allResults.push(r);
             }
@@ -554,8 +626,8 @@ export async function POST(req) {
           } catch { /* ignore */ }
         }
       } else {
-        // ── Handle regular URL ──
-        const { results, errors } = await scrapeSite(norm, category, country);
+        // ── Regular URL ──
+        const { results, errors } = await scrapeDirectoryPage(norm, category, country);
         for (const r of results) {
           if (!allResults.some(x => x.email === r.email)) allResults.push(r);
         }
