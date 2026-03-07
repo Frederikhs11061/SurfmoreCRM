@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS leads (
   email TEXT,
   phone TEXT,
   city TEXT,
+  website TEXT,
   status TEXT NOT NULL DEFAULT 'not_contacted',
   contact_person TEXT,
   notes TEXT,
