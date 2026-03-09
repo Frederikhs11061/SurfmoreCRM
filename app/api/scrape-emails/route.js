@@ -391,7 +391,11 @@ async function scrapeOneSite(siteUrl) {
   if (!html) return null;
 
   const url = new URL(siteUrl);
-  const name = extractPageName(html, siteUrl);
+  let name = extractPageName(html, siteUrl);
+  if (!name || isGenericName(name)) {
+    // Hvis vi ikke kan finde et tydeligt navn, så lader vi det være tomt
+    name = '';
+  }
   const textContent = name + ' ' + stripTags(html).slice(0, 6000);
   const category = detectCategory(textContent);
 
@@ -444,7 +448,7 @@ async function scrapeOneSite(siteUrl) {
   const website = url.origin;
 
   return {
-    name: name || '',
+    name,
     email: bestEmail,
     phone,
     city,
@@ -603,13 +607,6 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
     try {
       const lead = await scrapeOneSite(link.url);
       if (lead) {
-        // Use the link text as name if our extraction got garbage
-        if (link.text && link.text.length >= 2 && link.text.length <= 60 && !isGenericName(link.text)) {
-          // If extracted name is generic, use link text
-          if (!lead.name || isGenericName(lead.name)) {
-            lead.name = link.text;
-          }
-        }
         lead.category = overrideCategory || lead.category || pageCategory;
         lead.country = country || '';
         results.push(lead);
@@ -641,7 +638,8 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
         if (bestEmail && !results.some(r => r.email === bestEmail)) {
           const phone = extractPhone(subHtml);
           const city = extractCity(subHtml);
-          const name = (link.text && !isGenericName(link.text)) ? link.text : subName;
+          let name = subName;
+          if (!name || isGenericName(name)) name = '';
 
           results.push({
             name: name || '',
