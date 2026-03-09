@@ -537,8 +537,8 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
     maxLinks: 80,
   }).filter(l => {
     const path = new URL(l.url).pathname;
-    // Skip generic pages
-    if (/^\/$|kontakt|contact|cookie|privacy|login|om-os|about|pay|cart|checkout/i.test(path)) return false;
+    // Skip only clearly generic/utility pages – keep kontakt/om-os, da de ofte er lead-sider
+    if (/^\/$|cookie|privacy|login|pay|cart|checkout|terms|betingelser|policy/i.test(path)) return false;
     return path.length > 1;
   }).slice(0, 40);
 
@@ -588,8 +588,8 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
       // Does this subpage have its own emails?
       const subEmails = extractEmailsFromHtml(subHtml);
       const subDomain = subUrl.hostname.replace(/^www\./, '');
-      // Filter out emails from the parent site domain (those are the listing site's emails, not leads)
-      const leadEmails = subEmails.filter(e => !e.endsWith('@' + pageDomain) || pageDomain === subDomain);
+      // Filter out emails fra selve katalog-sitet (fx kontakt@gymfitfit.dk) – vi vil kun have de egentlige leads
+      const leadEmails = subEmails.filter(e => !e.endsWith('@' + pageDomain));
 
       if (leadEmails.length > 0) {
         // Check if we already have this email
