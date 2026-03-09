@@ -268,6 +268,28 @@ function extractEmailsFromHtml(html) {
     }
   }
 
+  // Cloudflare email protection: <a class="__cf_email__" data-cfemail="...">[email protected]</a>
+  const cfRe = /data-cfemail="([0-9a-fA-F]+)"/gi;
+  while ((m = cfRe.exec(html))) {
+    const encoded = m[1];
+    try {
+      if (encoded && encoded.length > 2) {
+        const key = parseInt(encoded.substr(0, 2), 16);
+        let email = '';
+        for (let i = 2; i < encoded.length; i += 2) {
+          const charCode = parseInt(encoded.substr(i, 2), 16) ^ key;
+          email += String.fromCharCode(charCode);
+        }
+        email = email.toLowerCase().trim().replace(/[.\-]+$/, '');
+        if (isValidLeadEmail(email)) {
+          emails.add(email);
+        }
+      }
+    } catch {
+      // ignore malformed cfemail
+    }
+  }
+
   return [...emails];
 }
 
@@ -555,6 +577,25 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
       results.push(lead);
     }
     return { results, errors };
+  }
+
+  // ── Directory page, but with mange direkte emails i selve listen ──
+  const directLeadEmails = relevantPageEmails.filter(e => !e.endsWith('@' + pageDomain));
+  if (directLeadEmails.length > 0) {
+    for (const email of directLeadEmails) {
+      if (results.some(r => r.email === email)) continue;
+      results.push({
+        name: '', // vi gætter ikke navn her
+        email,
+        phone: '',
+        city: '',
+        category: overrideCategory || pageCategory,
+        website: '',
+        sourceUrl: pageUrl,
+        contact_person: '',
+        country: country || '',
+      });
+    }
   }
 
   // ── Directory mode: scrape each external link as a separate org ──
