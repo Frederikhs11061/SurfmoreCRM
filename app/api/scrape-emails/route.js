@@ -60,9 +60,14 @@ function extractPageName(html, url) {
     if (title && title.length >= 2 && title.length <= 80 && !isGenericName(title)) return title;
   }
 
-  // 5) Fallback to pretty hostname
+  // 5) Fallback to most meaningful part of hostname
   try {
-    return new URL(url).hostname.replace(/^www\./, '').split('.')[0];
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    const parts = host.split('.');
+    // Skip 2-letter country-code subdomains (ar., au., de., etc.) and generic TLDs
+    const tlds = new Set(['com', 'net', 'org', 'dk', 'se', 'no', 'fi', 'de', 'fr', 'uk', 'io', 'fitness', 'co', 'be', 'nl', 'at', 'ch', 'es', 'it', 'pl', 'pt', 'br', 'ar', 'ca', 'au', 'nz', 'ru', 'cz', 'sk', 'hu', 'ro', 'bg', 'hr', 'si', 'rs', 'lt', 'lv', 'ee', 'is', 'me', 'info', 'biz']);
+    const meaningful = parts.filter(p => p.length > 2 && !tlds.has(p));
+    return meaningful[0] || parts[0];
   } catch {
     return '';
   }
@@ -76,6 +81,10 @@ function isGenericName(s) {
   if (/^\d{3}\b/.test(t)) return true;
   // Anti-bot / CDN interstitial pages
   if (/^(just a moment|attention required|cloudflare|ddos-guard|access denied|checking your browser|enable javascript|error|page not found|site not found|domain for sale)$/i.test(lower)) return true;
+  // Marketing taglines / SEO titles that are sentences, not org names
+  // e.g. "Find the perfect gym near you", "Encuentra tu gimnasio perfecto", "Finde das perfekte Fitnessstudio"
+  if (/^(find|finde|encuentra|encontre|trouvez|löydä|find the|find your|find a|find dit|find din|find de|find det)\b/i.test(lower)) return true;
+  if (/\b(near you|nærmeste|in your area|i dit område|i nærheden|perfekte|perfect gym|best gym|bedste gym|in unserem|con mejores|en bogot|in berlin)\b/i.test(lower)) return true;
   // Single generic words
   return /^(kontakt|contact|forside|home|om os|about|menu|navigation|header|footer|cookie|søg|search|login|links|oversigt|medlemsliste|bestyrelsen|bestyrelse|læs mere|start|velkommen|welcome|email|e-mail|telefon|adresse|nyhedsbrev|newsletter|blog|nyheder|privacy|log ind|tilmeld|website|hjemmeside|back|next|previous|vis mere|show more|load more)$/i.test(lower)
     || lower.length < 2;
@@ -388,10 +397,20 @@ function extractPhone(html) {
 
 // ─── City extraction ──────────────────────────────────────────────────────────
 
+// Words that should never appear as a city name (non-Danish, SEO text, etc.)
+const NON_CITY_WORDS = /^(gimnasios|fitnessstudios|gymnasios|studios|salles|kuntosalia|palestre|studios|fitnesscenters|sportscholen|siłownie|fitnesscentrum|sportcentra|sandgate|rd|str|road|ave|blvd|gimnasio|fitness|gym|sport|club|rue|spo)/i;
+
 function extractCity(html) {
   const text = stripTags(html);
-  const m = text.match(/\b(\d{4})\s+([A-ZÆØÅ][A-Za-zÆØÅæøå\s\-]{2,25})\b/);
-  if (m) return m[0].trim().replace(/\s+/g, ' ');
+  // Danish postal codes are 1000-9999 (first digit 1-9)
+  const re = /\b([1-9]\d{3})\s+([A-ZÆØÅ][A-Za-zÆØÅæøå\-]{2,20}(?:\s+[A-ZÆØÅ][A-Za-zÆØÅæøå\-]{2,20})?)\b/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const city = m[2].trim();
+    if (!NON_CITY_WORDS.test(city) && city.length <= 30) {
+      return (m[1] + ' ' + city).replace(/\s+/g, ' ');
+    }
+  }
   return '';
 }
 
