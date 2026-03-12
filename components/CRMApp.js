@@ -942,29 +942,48 @@ export default function CRMApp() {
   };
 
   // ─── Email Campaign helpers ───────────────────────────────────────────────────
-  const getCampaignLeads = () => leads.filter(l => {
-    if (!l.email || !/\S+@\S+\.\S+/.test(l.email)) return false;
-    if (campaignCats.size > 0 && !campaignCats.has(l.category)) return false;
-    if (campaignCountry !== 'Alle' && l.country !== campaignCountry) return false;
-    if (campaignStatus !== 'Alle' && l.status !== campaignStatus) return false;
-    return true;
-  });
+  const getCampaignLeads = () => {
+    const bulkIds = campaignModal?.bulkIds;
+    return leads.filter(l => {
+      if (!l.email || !/\S+@\S+\.\S+/.test(l.email)) return false;
+      if (bulkIds) return bulkIds.includes(l.id); // bulk selection overrides filters
+      if (campaignCats.size > 0 && !campaignCats.has(l.category)) return false;
+      if (campaignCountry !== 'Alle' && l.country !== campaignCountry) return false;
+      if (campaignStatus !== 'Alle' && l.status !== campaignStatus) return false;
+      return true;
+    });
+  };
 
-  const openCampaign = (tpl) => {
-    // Pre-fill category from template tags if set
-    const preFill = new Set();
-    for (const tag of (tpl.category_tags || [])) {
-      // add matching full category strings from leads
-      const parent = tag.match(/^(.+?)\s*\(/) ? tag.match(/^(.+?)\s*\(/)[1].trim() : tag;
-      allCats.filter(c => c === tag || c.startsWith(parent + ' (') || c === parent).forEach(c => preFill.add(c));
-    }
-    setCampaignCats(preFill);
+  // opts: { useCurrentFilters: bool, bulkIds: Set|null }
+  const openCampaign = (tpl, opts = {}) => {
+    const { useCurrentFilters = false, bulkIds = null } = opts;
     setCampaignCatOpen(false);
     setCampaignCatSearch('');
     setCampaignCatHierOpen(new Set());
-    setCampaignCountry('Alle');
-    setCampaignStatus('not_contacted');
-    setCampaignModal({ tpl });
+    if (bulkIds && bulkIds.size > 0) {
+      // Use the exact selected leads, ignore filters
+      setCampaignCats(new Set());
+      setCampaignCountry('Alle');
+      setCampaignStatus('Alle');
+      setCampaignModal({ tpl, bulkIds: [...bulkIds] });
+    } else if (useCurrentFilters) {
+      // Mirror the leads view's active filters
+      setCampaignCats(new Set(fCats));
+      setCampaignCountry(fCountry);
+      setCampaignStatus(fStatus);
+      setCampaignModal({ tpl });
+    } else {
+      // Default: pre-fill from template category_tags
+      const preFill = new Set();
+      for (const tag of (tpl?.category_tags || [])) {
+        const parent = tag.match(/^(.+?)\s*\(/) ? tag.match(/^(.+?)\s*\(/)[1].trim() : tag;
+        allCats.filter(c => c === tag || c.startsWith(parent + ' (') || c === parent).forEach(c => preFill.add(c));
+      }
+      setCampaignCats(preFill);
+      setCampaignCountry('Alle');
+      setCampaignStatus('not_contacted');
+      setCampaignModal({ tpl });
+    }
   };
 
   const campaignOpenGmail = async () => {
@@ -3383,14 +3402,16 @@ export default function CRMApp() {
               <button className="btn btn-g" style={{ fontSize: 12, padding: '7px 14px', marginLeft: 'auto' }} disabled={bulkSel.size === 0} onClick={copyEmailsBulk}>
                 Kopier emails ({bulkSel.size})
               </button>
-              {templates.length > 0 && (
-                <button className="btn" style={{ fontSize: 12, padding: '7px 14px', background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', fontWeight: 600, boxShadow: '0 4px 12px rgba(124,58,237,0.35)' }} onClick={() => {
-                  const firstTpl = templates.find(t => t.active) || templates[0];
-                  if (firstTpl) openCampaign(firstTpl);
-                }}>
-                  ✉ Send kampagne
-                </button>
-              )}
+              <button className="btn" style={{ fontSize: 12, padding: '7px 14px', background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', fontWeight: 600, boxShadow: '0 4px 12px rgba(124,58,237,0.35)' }} onClick={() => {
+                const firstTpl = templates.find(t => t.active) || templates[0] || null;
+                const noFilters = fCats.size === 0 && fStatus === 'Alle' && fCountry === 'Alle' && bulkSel.size === 0;
+                openCampaign(firstTpl, {
+                  bulkIds: bulkSel.size > 0 ? bulkSel : null,
+                  useCurrentFilters: !noFilters && bulkSel.size === 0,
+                });
+              }}>
+                ✉ Send kampagne
+              </button>
               <button className="btn btn-v" style={{ fontSize: 12, padding: '7px 16px' }} onClick={resetFiltersAndSort}>Nulstil filtre</button>
               <span style={{ fontSize: 13, color: '#4b5563' }}>{filtered.length} leads</span>
             </div>
@@ -3962,13 +3983,14 @@ export default function CRMApp() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: 12, color: '#4b5563', whiteSpace: 'nowrap' }}>Template:</span>
                     <select
-                      style={{ background: '#111827', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, color: '#a78bfa', fontSize: 13, fontWeight: 600, padding: '5px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-                      value={tpl.id}
+                      style={{ background: '#111827', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, color: tpl ? '#a78bfa' : '#6b7280', fontSize: 13, fontWeight: 600, padding: '5px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                      value={tpl?.id || '__none__'}
                       onChange={e => {
-                        const newTpl = templates.find(t => t.id === e.target.value);
-                        if (newTpl) setCampaignModal({ tpl: newTpl });
+                        const newTpl = e.target.value === '__none__' ? null : templates.find(t => t.id === e.target.value);
+                        setCampaignModal(prev => ({ ...prev, tpl: newTpl }));
                       }}
                     >
+                      <option value="__none__">Intet template</option>
                       {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                     </select>
                   </div>
@@ -3980,11 +4002,19 @@ export default function CRMApp() {
                 {/* Template preview */}
                 <div style={{ padding: '14px 22px', borderBottom: '1px solid #1f2937', background: '#0a0f1a' }}>
                   <div style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Email indhold</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>Emne: {tpl.subject || <span style={{ color: '#374151' }}>—</span>}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'hidden', position: 'relative' }}>
-                    {(tpl.body || '').slice(0, 350)}{(tpl.body || '').length > 350 ? '…' : ''}
-                  </div>
+                  {tpl ? <>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>Emne: {tpl.subject || <span style={{ color: '#374151' }}>—</span>}</div>
+                    <div style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'hidden' }}>
+                      {(tpl.body || '').slice(0, 350)}{(tpl.body || '').length > 350 ? '…' : ''}
+                    </div>
+                  </> : <div style={{ fontSize: 13, color: '#374151', fontStyle: 'italic' }}>Intet template valgt — du skriver selv indhold i dit mailprogram.</div>}
                 </div>
+                {/* Bulk selection indicator */}
+                {campaignModal?.bulkIds && (
+                  <div style={{ padding: '8px 22px', background: 'rgba(124,58,237,0.08)', borderBottom: '1px solid #1f2937', fontSize: 12, color: '#a78bfa' }}>
+                    ✓ Sender til de {campaignModal.bulkIds.length} valgte leads — filtrene nedenfor er deaktiverede
+                  </div>
+                )}
 
                 {/* Filters */}
                 <div style={{ padding: '14px 22px', borderBottom: '1px solid #1f2937' }}>

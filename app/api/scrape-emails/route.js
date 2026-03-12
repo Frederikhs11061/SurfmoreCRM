@@ -1001,21 +1001,42 @@ export async function POST(req) {
         if (Date.now() > DEADLINE) break;
         const batch = names.slice(ni, ni + NBATCH);
         const batchResults = await Promise.allSettled(batch.map(async (name) => {
-          // Strategy 1: search for name alone (no email keywords — they restrict results too much)
+          // Strategy 1: search for name alone
           let resultUrls = await ddgSearch(name, 3);
-          // Strategy 2: if no results, try without locale constraint (wt-wt = worldwide)
+          // Strategy 2: worldwide fallback if locale returns nothing
           if (resultUrls.length === 0) {
-            const fallbackUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(name)}&kl=wt-wt`;
-            const fHtml = await safeFetchWithLang(fallbackUrl, 12000, lang);
+            const fHtml = await safeFetchWithLang(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(name)}&kl=wt-wt`, 12000, lang);
             if (fHtml) resultUrls = extractDuckDuckGoResults(fHtml).slice(0, 3);
           }
+          // Strategy 3: name + "kontakt" for more targeted URL if still nothing
+          if (resultUrls.length === 0) {
+            const fHtml = await safeFetchWithLang(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(name + ' kontakt')}&kl=${locale}`, 12000, lang);
+            if (fHtml) resultUrls = extractDuckDuckGoResults(fHtml).slice(0, 3);
+          }
+
+          const perSiteDeadline = Math.min(Date.now() + 12000, DEADLINE);
+
           for (const siteUrl of resultUrls) {
-            const lead = await scrapeOneSite(siteUrl);
-            if (lead) {
+            // First try: fast single-page scrape
+            let lead = await scrapeOneSite(siteUrl);
+            if (lead && lead.email) {
               lead.category = category || lead.category;
               lead.country  = country  || '';
               if (!lead.name || isGenericName(lead.name)) lead.name = name;
               return lead;
+            }
+            // Second try: follow sublinks (e.g. location pages on a chain site)
+            if (Date.now() < perSiteDeadline) {
+              try {
+                const { results } = await scrapeDirectoryPage(siteUrl, category, country, perSiteDeadline);
+                const best = results.find(r => r.email) || null;
+                if (best) {
+                  best.category = category || best.category;
+                  best.country  = country  || '';
+                  if (!best.name || isGenericName(best.name)) best.name = name;
+                  return best;
+                }
+              } catch { /* ignore */ }
             }
           }
           return null;
