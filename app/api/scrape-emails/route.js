@@ -70,8 +70,14 @@ function extractPageName(html, url) {
 
 function isGenericName(s) {
   if (!s) return true;
-  const lower = s.toLowerCase().trim();
-  return /^(kontakt|contact|forside|home|om os|about|menu|navigation|header|footer|cookie|søg|search|login|links|oversigt|medlemsliste|bestyrelsen|bestyrelse|læs mere|start|velkommen|welcome|email|e-mail|telefon|adresse|nyhedsbrev|newsletter|blog|nyheder|privacy|log ind|tilmeld)$/i.test(lower)
+  const t = s.trim();
+  const lower = t.toLowerCase();
+  // HTTP error status lines ("403 Forbidden", "404 Not Found", "500 Internal Server Error" …)
+  if (/^\d{3}\b/.test(t)) return true;
+  // Anti-bot / CDN interstitial pages
+  if (/^(just a moment|attention required|cloudflare|ddos-guard|access denied|checking your browser|enable javascript|error|page not found|site not found|domain for sale)$/i.test(lower)) return true;
+  // Single generic words
+  return /^(kontakt|contact|forside|home|om os|about|menu|navigation|header|footer|cookie|søg|search|login|links|oversigt|medlemsliste|bestyrelsen|bestyrelse|læs mere|start|velkommen|welcome|email|e-mail|telefon|adresse|nyhedsbrev|newsletter|blog|nyheder|privacy|log ind|tilmeld|website|hjemmeside|back|next|previous|vis mere|show more|load more)$/i.test(lower)
     || lower.length < 2;
 }
 
@@ -477,35 +483,42 @@ async function scrapeOneSite(siteUrl) {
   // Collect emails from front page
   let allEmails = extractEmailsFromHtml(html);
 
-  // Find contact/about pages — parallel fetch
-  const contactLinks = extractLinks(html, siteUrl, { sameHostOnly: true, maxLinks: 40 })
-    .filter(l => /kontakt|contact|om-os|om\b|about|reach|connect|find-os|findos|hvem-er|team|ansatte|medarbejdere|impressum/i.test(l.url))
-    .slice(0, 5);
-
-  // Also try common contact page paths if not found via links
-  const commonPaths = ['/kontakt', '/contact', '/om-os', '/about', '/kontaktoplysninger'];
-  const existingPaths = new Set(contactLinks.map(l => new URL(l.url).pathname));
-  for (const p of commonPaths) {
-    if (!existingPaths.has(p)) {
-      contactLinks.push({ url: url.origin + p, text: '' });
-    }
-  }
-
-  // Parallel fetch all contact pages
-  const contactHtmls = await Promise.allSettled(
-    contactLinks.map(link => safeFetch(link.url, 7000))
-  );
   let combinedContactHtml = '';
-  for (const result of contactHtmls) {
-    if (result.status === 'fulfilled' && result.value) {
-      combinedContactHtml += result.value;
-      extractEmailsFromHtml(result.value).forEach(e => allEmails.push(e));
+
+  // Only fetch contact pages if we haven't found good emails on the front page
+  const siteDomainEarly = url.hostname.replace(/^www\./, '');
+  const hasGoodEmails = allEmails.some(e => e.endsWith('@' + siteDomainEarly));
+
+  if (!hasGoodEmails) {
+    // Find contact/about pages — parallel fetch
+    const contactLinks = extractLinks(html, siteUrl, { sameHostOnly: true, maxLinks: 40 })
+      .filter(l => /kontakt|contact|om-os|om\b|about|reach|connect|find-os|findos|hvem-er|team|ansatte|medarbejdere|impressum/i.test(l.url))
+      .slice(0, 5);
+
+    // Also try common contact page paths if not found via links
+    const commonPaths = ['/kontakt', '/contact', '/om-os', '/about', '/kontaktoplysninger'];
+    const existingPaths = new Set(contactLinks.map(l => new URL(l.url).pathname));
+    for (const p of commonPaths) {
+      if (!existingPaths.has(p)) {
+        contactLinks.push({ url: url.origin + p, text: '' });
+      }
+    }
+
+    // Parallel fetch all contact pages
+    const contactHtmls = await Promise.allSettled(
+      contactLinks.map(link => safeFetch(link.url, 7000))
+    );
+    for (const result of contactHtmls) {
+      if (result.status === 'fulfilled' && result.value) {
+        combinedContactHtml += result.value;
+        extractEmailsFromHtml(result.value).forEach(e => allEmails.push(e));
+      }
     }
   }
 
   allEmails = [...new Set(allEmails)];
 
-  const siteDomain = url.hostname.replace(/^www\./, '');
+  const siteDomain = siteDomainEarly;
   const ownDomainEmails = allEmails.filter(e => e.endsWith('@' + siteDomain));
   const externalEmails = allEmails.filter(e => !e.endsWith('@' + siteDomain));
 
@@ -645,7 +658,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
     // Skip only clearly generic/utility pages – keep kontakt/om-os, da de ofte er lead-sider
     if (/^\/$|cookie|privacy|login|pay|cart|checkout|terms|betingelser|policy/i.test(path)) return false;
     return path.length > 1;
-  }).slice(0, 40);
+  }).slice(0, 60);
 
   // Determine if this is a directory page or a single-org page
   const isDirectory = externalLinks.length >= 3 || internalLinks.length >= 5;
@@ -697,7 +710,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   }
 
   // ── Also check internal detail pages for org info or external links (parallel) ──
-  const internalBatch = internalLinks.slice(0, 20);
+  const internalBatch = internalLinks.slice(0, 30);
   const internalHtmls = await Promise.allSettled(
     internalBatch.map(link => safeFetch(link.url, 7000).then(h => ({ html: h, link })))
   );
@@ -735,23 +748,30 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
     }
 
     // Collect external links from subpages for second-level scraping
+    // Pass the subpage name as candidateName so we can use it as fallback on the external site
     const subExts = extractLinks(subHtml, link.url, { externalOnly: true, sameHostOnly: false, maxLinks: 5 }).slice(0, 3);
+    const candidateName = (subName && !isGenericName(subName))
+      ? subName
+      : (link.text && !isGenericName(link.text) ? link.text : '');
     for (const ext of subExts) {
       if (!results.some(r => r.website === new URL(ext.url).origin) && !externalFromSubs.some(e => e.url === ext.url)) {
-        externalFromSubs.push(ext);
+        externalFromSubs.push({ ...ext, candidateName });
       }
     }
   }
 
   // Scrape 2nd-level external links in parallel
   if (externalFromSubs.length > 0) {
-    const subExtResults = await Promise.allSettled(externalFromSubs.slice(0, 15).map(ext => scrapeOneSite(ext.url)));
+    const subExtBatch = externalFromSubs.slice(0, 30);
+    const subExtResults = await Promise.allSettled(subExtBatch.map(ext => scrapeOneSite(ext.url)));
     for (let idx = 0; idx < subExtResults.length; idx++) {
       const r = subExtResults[idx];
       if (r.status === 'fulfilled' && r.value && !results.some(x => x.email && x.email === r.value.email)) {
         const lead = r.value;
-        const ext = externalFromSubs[idx];
-        if (ext.text && ext.text.length >= 2 && !isGenericName(ext.text) && (!lead.name || isGenericName(lead.name))) lead.name = ext.text;
+        const ext = subExtBatch[idx];
+        // Use candidateName (from the internal subpage) as the best fallback, then link text
+        const fallbackName = ext.candidateName || (ext.text && !isGenericName(ext.text) ? ext.text : '');
+        if (fallbackName && (!lead.name || isGenericName(lead.name))) lead.name = fallbackName;
         lead.category = overrideCategory || lead.category || pageCategory;
         lead.country = country || '';
         results.push(lead);
