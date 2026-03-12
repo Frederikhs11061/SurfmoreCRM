@@ -1107,6 +1107,46 @@ export default function CRMApp() {
     runScrapeUrls(urls, effectiveCountry, effectiveCategory);
   };
 
+  const runNamesSearch = async () => {
+    if (!scrapeNameLines.length) return msg('Ingen navne at søge på', 'err');
+    const effectiveCountry = scrapeCustomCountry.trim() || scrapeCountry;
+    const effectiveCategory = scrapeCustomCategory.trim() || scrapeCategory;
+    setScrapeLoading(true);
+    setScrapeStartedAt(Date.now());
+    setScrapeElapsed(0);
+    setScrapeErrors([]);
+    setScrapeRows([]);
+    scrapeAbortRef.current = false;
+    const BATCH = 12; // 12 names per API call → processed as 6 parallel server-side
+    const allRows = [];
+    const allErrors = [];
+    const total = scrapeNameLines.length;
+    for (let bi = 0; bi < total; bi += BATCH) {
+      if (scrapeAbortRef.current) break;
+      const batch = scrapeNameLines.slice(bi, bi + BATCH);
+      setScrapeProgress({ done: bi, total, current: batch[0] });
+      try {
+        const res = await fetch('/api/scrape-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ names: batch, country: effectiveCountry, category: effectiveCategory }),
+        });
+        if (res.ok) {
+          let data; try { data = await res.json(); } catch { data = { leads: [], errors: [] }; }
+          for (const r of (data.leads || [])) {
+            if (!allRows.some(x => x.email && x.email === r.email)) allRows.push({ ...r, _editCat: r.category || effectiveCategory || '' });
+          }
+          allErrors.push(...(data.errors || []));
+        }
+      } catch (e) { allErrors.push({ url: 'navne-batch', reason: e.message || 'network_error' }); }
+      setScrapeRows([...allRows]);
+      setScrapeErrors([...allErrors]);
+    }
+    setScrapeProgress({ done: total, total, current: '' });
+    msg(allRows.length + ' leads fundet');
+    setScrapeLoading(false);
+  };
+
   const cancelScrape = () => {
     scrapeAbortRef.current = true;
     setScrapeLoading(false);
@@ -3290,6 +3330,46 @@ export default function CRMApp() {
             <div style={{ marginBottom: 18 }}>
               <h2 style={{ fontWeight: 800, fontSize: 20, marginBottom: 4, letterSpacing: 0.3 }}>🔍 Lead Scraper</h2>
               <div style={{ fontSize: 13, color: '#6b7280' }}>Indsæt én eller flere URL'er (eller et Google-søgelink) – vi crawler alle undersider og henter emails, tlf, by og kategori automatisk.</div>
+            </div>
+
+            {/* Navn-søgning */}
+            <div style={{ ...CC.card, padding: 16, marginBottom: 16, border: '1px solid #3b2d6b' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: '#a78bfa', letterSpacing: 0.3 }}>📋 Navn-søgning – indsæt navne og find emails automatisk</div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <textarea
+                    className="inp"
+                    style={{ width: '100%', height: 100, resize: 'vertical', fontSize: 12, fontFamily: 'monospace' }}
+                    value={scrapeNamesRaw}
+                    onChange={e => setScrapeNamesRaw(e.target.value)}
+                    placeholder={'Marstal Havn\nKøge Marina\nVordingborg Lystbådehavn'}
+                    disabled={scrapeLoading}
+                  />
+                  {scrapeNameLines.length > 0 && (
+                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                      {scrapeNameLines.length} navn{scrapeNameLines.length !== 1 ? 'e' : ''}
+                      {scrapeNameDupes.length > 0 && <span style={{ color: '#ef4444', marginLeft: 8 }}>{scrapeNameDupes.length} duplikat{scrapeNameDupes.length !== 1 ? 'er' : ''} ignoreret</span>}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 2 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Land</label>
+                    <select className="inp" style={{ height: 36, minWidth: 130 }} value={scrapeCustomCountry || scrapeCountry} onChange={e => { setScrapeCountry(e.target.value); setScrapeCustomCountry(''); }} disabled={scrapeLoading}>
+                      {Object.keys(DDG_LOCALE).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <button
+                    className="btn btn-p"
+                    style={{ height: 38, fontWeight: 700, whiteSpace: 'nowrap' }}
+                    onClick={runNamesSearch}
+                    disabled={scrapeLoading || !scrapeNameLines.length}
+                  >
+                    {scrapeLoading ? '⏳ Søger...' : '🔍 Søg navne'}
+                  </button>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: '#4b5563', marginTop: 6 }}>Ét navn per linje. Vi søger DuckDuckGo for hvert navn og henter email, tlf og website automatisk. Land bruges til at præcisere søgningen.</div>
             </div>
 
             {/* Smart søgning */}

@@ -971,12 +971,54 @@ function normaliseUrl(value) {
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
+// Country → DDG locale + Accept-Language
+const COUNTRY_LOCALE = { 'Danmark':'dk-da','Sverige':'se-sv','Norge':'no-no','Finland':'fi-fi','Tyskland':'de-de','Frankrig':'fr-fr','Nederlandene':'nl-nl','Belgien':'be-fr','Schweiz':'ch-de','Østrig':'at-de','Spanien':'es-es','Italien':'it-it','Polen':'pl-pl','Portugal':'pt-pt','Brasilien':'br-pt','USA':'us-en','UK':'uk-en','Irland':'ie-en' };
+const COUNTRY_LANG  = { 'Sverige':'sv,en;q=0.8','Norge':'no,en;q=0.8','Finland':'fi,en;q=0.8','Tyskland':'de,en;q=0.8','Frankrig':'fr,en;q=0.8','Nederlandene':'nl,en;q=0.8','Spanien':'es,en;q=0.8','Italien':'it,en;q=0.8','Polen':'pl,en;q=0.8','Portugal':'pt,en;q=0.8','Brasilien':'pt-BR,en;q=0.8' };
+const SCANDI = new Set(['Danmark','Norge','Sverige','Finland']);
+
 export async function POST(req) {
   try {
-    const { urls = [], country = '', category = '' } = await req.json();
+    const { urls = [], names = [], country = '', category = '' } = await req.json();
     const allResults = [];
     const allErrors = [];
     const DEADLINE = Date.now() + 54000; // Stay inside Vercel's 60s limit
+
+    // ── Names mode: look up each org name via targeted DDG search ──────────────
+    if (names.length > 0) {
+      const locale = COUNTRY_LOCALE[country] || 'wt-wt';
+      const lang   = COUNTRY_LANG[country]   || 'da,en-US;q=0.9,en;q=0.8';
+      const emailKw = SCANDI.has(country) ? 'e-post kontakt' : 'email contact';
+
+      const NBATCH = 6;
+      for (let ni = 0; ni < names.length; ni += NBATCH) {
+        if (Date.now() > DEADLINE) break;
+        const batch = names.slice(ni, ni + NBATCH);
+        const batchResults = await Promise.allSettled(batch.map(async (name) => {
+          const q = encodeURIComponent(`"${name}" ${emailKw}`);
+          const ddgUrl = `https://html.duckduckgo.com/html/?q=${q}&kl=${locale}`;
+          const searchHtml = await safeFetchWithLang(ddgUrl, 15000, lang);
+          if (!searchHtml) return null;
+          const resultUrls = extractDuckDuckGoResults(searchHtml).slice(0, 3);
+          for (const siteUrl of resultUrls) {
+            const lead = await scrapeOneSite(siteUrl);
+            if (lead) {
+              lead.category = category || lead.category;
+              lead.country  = country  || '';
+              // Use the searched name as fallback if site returned nothing useful
+              if (!lead.name || isGenericName(lead.name)) lead.name = name;
+              return lead;
+            }
+          }
+          return null;
+        }));
+        for (const r of batchResults) {
+          if (r.status === 'fulfilled' && r.value) {
+            if (!allResults.some(x => x.email && x.email === r.value.email)) allResults.push(r.value);
+          }
+        }
+      }
+      return NextResponse.json({ leads: allResults, errors: allErrors });
+    }
 
     for (const raw of urls) {
       if (Date.now() > DEADLINE) {
