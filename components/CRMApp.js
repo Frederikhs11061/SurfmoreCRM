@@ -1117,7 +1117,7 @@ export default function CRMApp() {
     setScrapeErrors([]);
     setScrapeRows([]);
     scrapeAbortRef.current = false;
-    const BATCH = 12; // 12 names per API call → processed as 6 parallel server-side
+    const BATCH = 18; // 18 names per API call → 3 rounds of 6 parallel server-side
     const allRows = [];
     const allErrors = [];
     const total = scrapeNameLines.length;
@@ -3349,6 +3349,7 @@ export default function CRMApp() {
                     <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
                       {scrapeNameLines.length} navn{scrapeNameLines.length !== 1 ? 'e' : ''}
                       {scrapeNameDupes.length > 0 && <span style={{ color: '#ef4444', marginLeft: 8 }}>{scrapeNameDupes.length} duplikat{scrapeNameDupes.length !== 1 ? 'er' : ''} ignoreret</span>}
+                      {scrapeNameLines.length > 200 && <span style={{ color: '#f59e0b', marginLeft: 8 }}>⚠️ Lang liste – del op i bidder af maks 200 for hurtigere resultater</span>}
                     </div>
                   )}
                 </div>
@@ -3443,7 +3444,7 @@ export default function CRMApp() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <div style={{ width: 20, height: 20, border: '2.5px solid #1f2937', borderTop: '2.5px solid #0ea5e9', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>
-                        URL {scrapeProgress.done + 1}/{scrapeProgress.total} · {scrapeRows.length} leads fundet · {scrapeElapsed}s
+                        {scrapeProgress.done + 1}/{scrapeProgress.total} behandlet · {scrapeRows.length} leads fundet · {scrapeElapsed}s
                       </span>
                       <button className="btn btn-d" style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }} onClick={cancelScrape}>Stop</button>
                     </div>

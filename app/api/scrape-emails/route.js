@@ -987,24 +987,33 @@ export async function POST(req) {
     if (names.length > 0) {
       const locale = COUNTRY_LOCALE[country] || 'wt-wt';
       const lang   = COUNTRY_LANG[country]   || 'da,en-US;q=0.9,en;q=0.8';
-      const emailKw = SCANDI.has(country) ? 'e-post kontakt' : 'email contact';
+
+      // Helper: search DDG for a query, return top N result URLs
+      const ddgSearch = async (query, topN = 3) => {
+        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=${locale}`;
+        const html = await safeFetchWithLang(url, 15000, lang);
+        if (!html) return [];
+        return extractDuckDuckGoResults(html).slice(0, topN);
+      };
 
       const NBATCH = 6;
       for (let ni = 0; ni < names.length; ni += NBATCH) {
         if (Date.now() > DEADLINE) break;
         const batch = names.slice(ni, ni + NBATCH);
         const batchResults = await Promise.allSettled(batch.map(async (name) => {
-          const q = encodeURIComponent(`"${name}" ${emailKw}`);
-          const ddgUrl = `https://html.duckduckgo.com/html/?q=${q}&kl=${locale}`;
-          const searchHtml = await safeFetchWithLang(ddgUrl, 15000, lang);
-          if (!searchHtml) return null;
-          const resultUrls = extractDuckDuckGoResults(searchHtml).slice(0, 3);
+          // Strategy 1: search for name alone (no email keywords — they restrict results too much)
+          let resultUrls = await ddgSearch(name, 3);
+          // Strategy 2: if no results, try without locale constraint (wt-wt = worldwide)
+          if (resultUrls.length === 0) {
+            const fallbackUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(name)}&kl=wt-wt`;
+            const fHtml = await safeFetchWithLang(fallbackUrl, 12000, lang);
+            if (fHtml) resultUrls = extractDuckDuckGoResults(fHtml).slice(0, 3);
+          }
           for (const siteUrl of resultUrls) {
             const lead = await scrapeOneSite(siteUrl);
             if (lead) {
               lead.category = category || lead.category;
               lead.country  = country  || '';
-              // Use the searched name as fallback if site returned nothing useful
               if (!lead.name || isGenericName(lead.name)) lead.name = name;
               return lead;
             }
