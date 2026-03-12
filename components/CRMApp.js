@@ -22,6 +22,81 @@ const DEFAULT_LEAD = {
 };
 const DEFAULT_OTR = { date: '', by: 'Jeppe', note: '', sale_info: '' };
 
+// ─── Smart scraper search terms per category + country ────────────────────────
+const SMART_SEARCH_TERMS = {
+  'Havne': {
+    'Danmark': ['gæstehavn email kontakt', 'lystbådehavn kontakt email', 'marina havn sejlklub email', 'havnekontor email'],
+    'Sverige': ['gästhamn email kontakt', 'båthamn kontakt email', 'marina sverige email', 'hamnkontor email'],
+    'Norge': ['gjestehavn email kontakt', 'lystbåthavn kontakt email', 'marina norge email', 'havnekontor email'],
+  },
+  'Kajakklubber': {
+    'Danmark': ['kajakklub kontakt email', 'kanoklub email dk', 'kajak padleklub email'],
+    'Sverige': ['kajakklubbar kontakt email', 'paddlingsklubb email sverige', 'kanotklubbar email'],
+    'Norge': ['kajakklubber kontakt email', 'padleklubb email norge', 'kajakforening email'],
+  },
+  'Skateparks': {
+    'Danmark': ['skatepark kontakt email dk', 'skatebane email'],
+    'Sverige': ['skatepark kontakt email sverige', 'skatehall email'],
+    'Norge': ['skatepark kontakt email norge', 'skateanlegg email'],
+  },
+  'Spejdergrupper': {
+    'Danmark': ['spejdergruppe email kontakt dk', 'FDF KFUM spejder email'],
+    'Sverige': ['scoutkår email kontakt sverige', 'scoutgrupp email'],
+    'Norge': ['speidergruppe email kontakt norge', 'speider korps email'],
+  },
+  'Butik & Webshop': {
+    'Danmark': ['surf shop email kontakt', 'kitesurf shop dk email', 'outdoor sport butik email'],
+    'Sverige': ['surf shop email kontakt sverige', 'kitesurf butik email', 'outdoor sport butik email'],
+    'Norge': ['surf shop email kontakt norge', 'kitesurf butikk email', 'outdoor sport butikk email'],
+  },
+  'Skoler & klubber': {
+    'Danmark': ['surfskole kontakt email', 'kiteskole dk email', 'vandsportsskole email'],
+    'Sverige': ['surfskola kontakt email sverige', 'kiteskola email', 'vattensportsskola email'],
+    'Norge': ['surfskole kontakt email norge', 'kiteskole email', 'vannsportsskole email'],
+  },
+  'Folkeskoler': {
+    'Danmark': ['folkeskole email kontakt', 'grundskole email dk'],
+    'Sverige': ['grundskola email kontakt sverige', 'lågstadieskola email'],
+    'Norge': ['barneskole email kontakt norge', 'ungdomsskole email'],
+  },
+  'Børnehaver': {
+    'Danmark': ['børnehave email kontakt', 'daginstitution email dk'],
+    'Sverige': ['förskola email kontakt sverige', 'dagis email'],
+    'Norge': ['barnehage email kontakt norge'],
+  },
+  'Efterskoler': {
+    'Danmark': ['efterskole kontakt email dk', 'sports efterskole email'],
+    'Sverige': ['folkhögskola kontakt email sverige'],
+    'Norge': ['folkehøgskole kontakt email norge'],
+  },
+  'Gymnasium': {
+    'Danmark': ['gymnasium email kontakt dk', 'HHX HTX STX email'],
+    'Sverige': ['gymnasium email kontakt sverige'],
+    'Norge': ['videregående skole email kontakt norge'],
+  },
+  'Højskoler': {
+    'Danmark': ['højskole kontakt email dk'],
+    'Sverige': ['folkhögskola kontakt email sverige'],
+    'Norge': ['folkehøgskole kontakt email norge'],
+  },
+  'Naturskoler, centre & vejledere': {
+    'Danmark': ['naturskole email kontakt', 'naturvejleder email dk', 'friluftscentrum email'],
+    'Sverige': ['naturskola email kontakt sverige', 'friluftsfrämjandet email'],
+    'Norge': ['naturskole email kontakt norge', 'friluftsrådet email'],
+  },
+  'Drager & Legetøj': {
+    'Danmark': ['dragebutik email kontakt', 'legetøj outdoor butik email dk'],
+    'Sverige': ['drakar butik email kontakt sverige'],
+    'Norge': ['drage butikk email kontakt norge'],
+  },
+  'Indkøbsforeninger': {
+    'Danmark': ['indkøbsforening email kontakt dk'],
+    'Sverige': ['inköpsförening email kontakt sverige'],
+    'Norge': ['innkjøpsforening email kontakt norge'],
+  },
+};
+const GOOGLE_DOMAIN = { 'Danmark': 'google.dk', 'Sverige': 'google.se', 'Norge': 'google.no' };
+
 // ─── CSV Parsing helpers ─────────────────────────────────────────────────────
 
 // Detects whether the file uses ; or , as separator by counting occurrences in the first lines
@@ -410,6 +485,7 @@ export default function CRMApp() {
   const [scrapeElapsed, setScrapeElapsed] = useState(0);
   const [scrapeErrors, setScrapeErrors] = useState([]);
   const [scrapeNamesRaw, setScrapeNamesRaw] = useState('');
+  const [scrapeSmartKeywords, setScrapeSmartKeywords] = useState('');
 
   useEffect(() => {
     if (!scrapeLoading || !scrapeStartedAt) return;
@@ -755,6 +831,48 @@ export default function CRMApp() {
     setScrapeLoading(false);
   };
 
+  const generateSmartUrls = (autoRun = false) => {
+    const domain = GOOGLE_DOMAIN[scrapeCountry] || 'google.com';
+    let terms;
+    if (scrapeSmartKeywords.trim()) {
+      terms = scrapeSmartKeywords.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    } else if (scrapeCategory && SMART_SEARCH_TERMS[scrapeCategory]?.[scrapeCountry]) {
+      terms = SMART_SEARCH_TERMS[scrapeCategory][scrapeCountry];
+    } else {
+      const catLabel = scrapeCategory || 'kontakt';
+      const countryLabel = scrapeCountry;
+      terms = [`${catLabel} email kontakt ${countryLabel}`, `${catLabel} ${countryLabel} email`];
+    }
+    const urls = terms.map(t => `https://www.${domain}/search?q=${encodeURIComponent(t)}`);
+    setScrapeUrls(urls.join('\n'));
+    msg(urls.length + ' søge-URLs genereret');
+    if (autoRun) {
+      // slight delay so state updates first
+      setTimeout(() => {
+        const urlList = urls;
+        setScrapeLoading(true);
+        setScrapeStartedAt(Date.now());
+        setScrapeElapsed(0);
+        setScrapeErrors([]);
+        setScrapeRows([]);
+        fetch('/api/scrape-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: urlList, country: scrapeCountry, category: scrapeCategory }),
+        }).then(r => r.json()).then(data => {
+          const rows = (data.leads || []).map(r => ({ ...r, _editCat: r.category || scrapeCategory || '' }));
+          setScrapeRows(rows);
+          setScrapeErrors(data.errors || []);
+          msg(rows.length + ' leads fundet');
+          setScrapeLoading(false);
+        }).catch(e => {
+          msg('Fejl ved scraping: ' + (e.message || ''), 'err');
+          setScrapeLoading(false);
+        });
+      }, 100);
+    }
+  };
+
   const updateScrapeRow = (idx, field, value) => {
     setScrapeRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
   };
@@ -1097,8 +1215,9 @@ export default function CRMApp() {
       for (let i = 0; i < ids.length; i += CHUNK) {
         await supabase.from('leads').update(updatePayload).in('id', ids.slice(i, i + CHUNK));
       }
-      if (bulkDate) {
-        const rows = ids.map(id => ({ lead_id: id, date: bulkDate, by: bulkBy, note: bulkNote, sale_info: bulkSale.trim() || '' }));
+      if (bulkDate || bulkNote.trim() || bulkSale.trim()) {
+        const today = new Date().toISOString().split('T')[0];
+        const rows = ids.map(id => ({ lead_id: id, date: bulkDate || today, by: bulkBy, note: bulkNote, sale_info: bulkSale.trim() || '' }));
         await supabase.from('outreaches').insert(rows);
       }
       await loadLeads();
@@ -2898,6 +3017,39 @@ export default function CRMApp() {
             <div style={{ marginBottom: 18 }}>
               <h2 style={{ fontWeight: 800, fontSize: 20, marginBottom: 4, letterSpacing: 0.3 }}>🔍 Lead Scraper</h2>
               <div style={{ fontSize: 13, color: '#6b7280' }}>Indsæt én eller flere URL'er (eller et Google-søgelink) – vi crawler alle undersider og henter emails, tlf, by og kategori automatisk.</div>
+            </div>
+
+            {/* Smart søgning */}
+            <div style={{ ...CC.card, padding: 16, marginBottom: 16, border: '1px solid #1e3a5f' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#38bdf8', letterSpacing: 0.3 }}>🔎 Smart søgning – søg automatisk efter leads</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div>
+                  <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Kategori</label>
+                  <select className="inp" value={scrapeCategory} onChange={e => setScrapeCategory(e.target.value)} style={{ height: 38, minWidth: 180 }}>
+                    <option value="">– Vælg kategori –</option>
+                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Land</label>
+                  <select className="inp" value={scrapeCountry} onChange={e => setScrapeCountry(e.target.value)} style={{ height: 38, minWidth: 130 }}>
+                    {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Tilpassede søgeord <span style={{ color: '#4b5563' }}>(valgfrit – ellers bruges standard for kategorien)</span></label>
+                  <input className="inp" style={{ height: 38, width: '100%' }} value={scrapeSmartKeywords} onChange={e => setScrapeSmartKeywords(e.target.value)} placeholder="f.eks. gæstehavn Bornholm email, marina jylland kontakt" disabled={scrapeLoading} />
+                </div>
+                <button className="btn" style={{ height: 38, background: '#0ea5e9', color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }} onClick={() => generateSmartUrls(false)} disabled={scrapeLoading}>
+                  Generer URLs
+                </button>
+                <button className="btn btn-p" style={{ height: 38, fontWeight: 700, whiteSpace: 'nowrap' }} onClick={() => generateSmartUrls(true)} disabled={scrapeLoading || (!scrapeCategory && !scrapeSmartKeywords.trim())}>
+                  {scrapeLoading ? '⏳ Scraper...' : '🚀 Søg & scrape alt'}
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#4b5563', marginTop: 8 }}>
+                Genererer automatisk Google-søgninger baseret på kategori + land og starter scraping. Du kan også redigere URL'erne nedenfor bagefter.
+              </div>
             </div>
 
             {/* Input + config grid */}
