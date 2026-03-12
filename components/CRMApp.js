@@ -613,6 +613,12 @@ export default function CRMApp() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [newUserModal, setNewUserModal] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserError, setNewUserError] = useState('');
+  const [newUserLoading, setNewUserLoading] = useState(false);
+  const [newUserSuccess, setNewUserSuccess] = useState('');
   const [templates, setTemplates] = useState([]);
   const [tplLoading, setTplLoading] = useState(false);
   const [editTpl, setEditTpl] = useState(null);
@@ -1145,6 +1151,26 @@ export default function CRMApp() {
     setScrapeProgress({ done: total, total, current: '' });
     msg(allRows.length + ' leads fundet');
     setScrapeLoading(false);
+  };
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setNewUserError('');
+    setNewUserSuccess('');
+    setNewUserLoading(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+      });
+      if (error) { setNewUserError(error.message); }
+      else {
+        setNewUserSuccess('Bruger oprettet! En bekræftelsesmail er sendt til ' + newUserEmail.trim());
+        setNewUserEmail('');
+        setNewUserPassword('');
+      }
+    } catch (e) { setNewUserError(e.message || 'Ukendt fejl'); }
+    setNewUserLoading(false);
   };
 
   const cancelScrape = () => {
@@ -1951,15 +1977,37 @@ export default function CRMApp() {
     card: { background: 'linear-gradient(180deg, #111827 0%, #0d1420 100%)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 14, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' },
     inner: { background: '#0a0f1e', border: '1px solid rgba(255,255,255,0.04)', borderRadius: 10 },
   };
-  const NAV = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'list', label: 'Leads' },
-    { id: 'import', label: 'Importér' },
-    { id: 'scraper', label: 'Lead scraper' },
-    { id: 'templates', label: 'Mail templates' },
-    { id: 'shopify_settings', label: 'Shopify' },
-    { id: 'settings', label: 'Indstillinger' },
+  const NAV_SECTIONS = [
+    {
+      label: 'Oversigt',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+      ]
+    },
+    {
+      label: 'Leads',
+      items: [
+        { id: 'list', label: 'Alle leads', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+        { id: 'scraper', label: 'Lead Scraper', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> },
+        { id: 'import', label: 'Importér', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> },
+      ]
+    },
+    {
+      label: 'Outreach',
+      items: [
+        { id: 'templates', label: 'Mail templates', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> },
+        { id: 'activity', label: 'Aktivitet', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+      ]
+    },
+    {
+      label: 'System',
+      items: [
+        { id: 'shopify_settings', label: 'Shopify', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg> },
+        { id: 'settings', label: 'Indstillinger', icon: <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
+      ]
+    },
   ];
+  const NAV = NAV_SECTIONS.flatMap(s => s.items);
 
   if (authLoading) {
     return (
@@ -2057,9 +2105,10 @@ export default function CRMApp() {
         .tag{background:#0ea5e915;color:#38bdf8;border:1px solid #0ea5e925;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600}
         label{font-size:12px;color:#94a3b8;display:block;margin-bottom:6px;font-weight:500}
         .sl{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:12px}
-        .navbtn{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;cursor:pointer;border:none;background:none;color:#94a3b8;font-family:inherit;font-size:13px;font-weight:500;width:100%;transition:all 0.2s;text-align:left}
-        .navbtn:hover{background:rgba(255,255,255,0.05);color:#f8fafc}
-        .navbtn.active{background:linear-gradient(90deg, rgba(14,165,233,0.15) 0%, transparent 100%);color:#38bdf8;font-weight:600;border-left:2px solid #38bdf8;border-radius:0 10px 10px 0}
+        .navbtn{display:flex;align-items:center;gap:9px;padding:8px 12px;border-radius:8px;cursor:pointer;border:none;background:none;color:#64748b;font-family:inherit;font-size:13px;font-weight:500;width:100%;transition:all 0.15s;text-align:left;line-height:1.3}
+        .navbtn:hover{background:rgba(255,255,255,0.05);color:#cbd5e1}
+        .navbtn.active{background:rgba(14,165,233,0.12);color:#38bdf8;font-weight:600}
+        .nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#334155;padding:14px 12px 4px;display:block}
 
         /* --- MOBILE OPTIMIZATION --- */
         @media (max-width: 900px) {
@@ -2100,10 +2149,10 @@ export default function CRMApp() {
             white-space: nowrap; width: auto; padding: 6px 12px !important; font-size: 13px !important;
             border-left: none !important; border-radius: 8px !important; background: transparent !important;
           }
-          .crm-sidebar .navbtn.active { 
-            background: rgba(255,255,255,0.08) !important; 
-            color: #fff !important; 
-            box-shadow: inset 0 -2px 0 #38bdf8 !important; 
+          .crm-sidebar .navbtn.active {
+            background: rgba(14,165,233,0.15) !important;
+            color: #fff !important;
+            box-shadow: inset 0 -2px 0 #38bdf8 !important;
           }
           .crm-sidebar-bottom { display: none !important; } 
           
@@ -2129,21 +2178,78 @@ export default function CRMApp() {
       {toast && <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: toast.t === 'err' ? '#ef4444' : '#22c55e', color: '#fff', padding: '10px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, boxShadow: '0 8px 30px rgba(0,0,0,0.6)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>{toast.m}</div>}
 
       {/* Sidebar */}
-      <div className="crm-sidebar" style={{ width: 160, background: '#060b14', borderRight: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column', padding: '20px 10px', gap: 2, position: 'sticky', top: 0, height: '100vh', flexShrink: 0, boxShadow: '4px 0 24px rgba(0,0,0,0.2)' }}>
-        <div className="crm-sidebar-header" style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', marginBottom: 4, padding: '0 4px' }}>Surfmore</div>
-        <div className="crm-sidebar-header" style={{ fontSize: 11, color: '#4b5563', marginBottom: 20, padding: '0 4px' }}>CRM</div>
-        {NAV.map(n => (
-          <button key={n.id} className={'navbtn' + (view === n.id ? ' active' : '')} onClick={() => { setBulk(false); setView(n.id); }}>
-            {n.label}
-          </button>
-        ))}
-        <div className="crm-sidebar-bottom" style={{ marginTop: 'auto', padding: '0 4px' }}>
-          <div style={{ fontSize: 10, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
-            <span style={{ color: '#4b5563' }}>Supabase</span>
+      <div className="crm-sidebar" style={{ width: 220, background: '#0b1120', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', padding: '0', position: 'sticky', top: 0, height: '100vh', flexShrink: 0, overflowY: 'auto' }}>
+        {/* Logo */}
+        <div className="crm-sidebar-header" style={{ padding: '20px 18px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg,#0ea5e9,#4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>🌊</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9', letterSpacing: 0.3 }}>Surfmore</div>
+              <div style={{ fontSize: 10, color: '#475569', fontWeight: 500 }}>CRM Platform</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav sections */}
+        <div style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }}>
+          {NAV_SECTIONS.map(section => (
+            <div key={section.label}>
+              <span className="nav-section-label">{section.label}</span>
+              {section.items.map(n => (
+                <button key={n.id} className={'navbtn' + (view === n.id ? ' active' : '')} onClick={() => { setBulk(false); setView(n.id); }}>
+                  <span style={{ opacity: view === n.id ? 1 : 0.7, flexShrink: 0 }}>{n.icon}</span>
+                  {n.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {/* User profile + actions */}
+        <div className="crm-sidebar-bottom" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* Logged-in user */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#0ea5e9,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+              {(user?.email?.[0] || '?').toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email?.split('@')[0] || 'Bruger'}</div>
+              <div style={{ fontSize: 10, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.email || ''}</div>
+            </div>
+          </div>
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={() => { setNewUserModal(true); setNewUserError(''); setNewUserSuccess(''); }} style={{ flex: 1, background: 'rgba(14,165,233,0.1)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: 7, color: '#38bdf8', fontSize: 11, fontWeight: 600, padding: '6px 4px', cursor: 'pointer', fontFamily: 'inherit' }}>+ Ny bruger</button>
+            <button onClick={handleLogout} style={{ flex: 1, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 7, color: '#fca5a5', fontSize: 11, fontWeight: 600, padding: '6px 4px', cursor: 'pointer', fontFamily: 'inherit' }}>Log ud</button>
           </div>
         </div>
       </div>
+
+      {/* New user modal */}
+      {newUserModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={e => { if (e.target === e.currentTarget) setNewUserModal(false); }}>
+          <div style={{ background: '#0b1120', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: '#f1f5f9' }}>Opret ny bruger</div>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Brugeren modtager en bekræftelsesmail.</div>
+            {newUserError && <div style={{ background: '#ef444415', border: '1px solid #ef444430', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', marginBottom: 12 }}>{newUserError}</div>}
+            {newUserSuccess && <div style={{ background: '#22c55e15', border: '1px solid #22c55e30', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#86efac', marginBottom: 12 }}>{newUserSuccess}</div>}
+            <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>Email</label>
+                <input className="inp" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="bruger@surfmore.dk" required style={{ height: 42 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>Adgangskode</label>
+                <input className="inp" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Minimum 6 tegn" required minLength={6} style={{ height: 42 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button type="button" onClick={() => setNewUserModal(false)} style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, padding: '10px', cursor: 'pointer', fontFamily: 'inherit' }}>Annuller</button>
+                <button type="submit" disabled={newUserLoading || !newUserEmail || !newUserPassword} className="btn btn-p" style={{ flex: 1, justifyContent: 'center', height: 42 }}>{newUserLoading ? 'Opretter...' : 'Opret bruger'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
 
