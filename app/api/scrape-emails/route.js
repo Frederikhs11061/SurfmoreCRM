@@ -347,6 +347,42 @@ function isSearchEngineUrl(url) {
   return isGoogleSearchUrl(url) || isDuckDuckGoUrl(url);
 }
 
+// ─── Find org name near a mailto: link in HTML ───────────────────────────────
+// Tries: (1) link text, (2) nearby heading/strong text, (3) domain-based fallback
+
+function findMailtoName(html, email) {
+  const esc = email.replace(/[.+@]/g, c => '\\' + c);
+  // 1) <a href="mailto:email">Name</a> — prefer link text if it's not the email itself
+  const re1 = new RegExp(`<a[^>]*href=["'][^"']*mailto:${esc}[^"']*["'][^>]*>([\\s\\S]{1,120}?)<\\/a>`, 'i');
+  const m1 = re1.exec(html);
+  if (m1) {
+    const text = stripTags(m1[1]).trim();
+    if (text && text.toLowerCase() !== email.toLowerCase() && text.length >= 2 && !isGenericName(text)) return text;
+  }
+  // 2) Look for a <strong>, <b>, <h2-h4> or <td> immediately before the email in the surrounding 400 chars
+  const idx = html.toLowerCase().indexOf(email.toLowerCase());
+  if (idx > 0) {
+    const before = html.slice(Math.max(0, idx - 500), idx);
+    const tagRe = /<(?:strong|b|h[2-6]|td)[^>]*>([^<]{2,80})<\/(?:strong|b|h[2-6]|td)>/gi;
+    let m2; let last = '';
+    while ((m2 = tagRe.exec(before))) {
+      const t = stripTags(m2[1]).trim();
+      if (t.length >= 2 && !isGenericName(t)) last = t;
+    }
+    if (last) return last;
+  }
+  // 3) Derive from the email domain as a last resort
+  try {
+    const domain = email.split('@')[1];
+    const parts = domain.split('.');
+    const tlds = new Set(['com','net','org','dk','se','no','fi','de','fr','uk','io','co','nl','be','at','ch','es','it','pl','pt','br','nu','info','biz']);
+    const meaningful = parts.filter(p => p.length > 2 && !tlds.has(p));
+    const base = meaningful[0] || parts[0];
+    if (base && base.length > 2) return base.charAt(0).toUpperCase() + base.slice(1);
+  } catch { /* ignore */ }
+  return '';
+}
+
 // ─── Extract emails from HTML with strict validation ──────────────────────────
 
 function extractEmailsFromHtml(html) {
@@ -756,7 +792,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country, deadline 
     for (const email of directLeadEmails) {
       if (results.some(r => r.email === email)) continue;
       results.push({
-        name: '', // vi gætter ikke navn her
+        name: findMailtoName(html, email),
         email,
         phone: '',
         city: '',
