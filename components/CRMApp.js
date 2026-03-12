@@ -625,6 +625,14 @@ export default function CRMApp() {
   const [scrapeSmartKeywords, setScrapeSmartKeywords] = useState('');
   const [scrapeCustomCategory, setScrapeCustomCategory] = useState('');
   const [scrapeCustomCountry, setScrapeCustomCountry] = useState('');
+  const [scrapeProgress, setScrapeProgress] = useState({ done: 0, total: 0, current: '' });
+  const scrapeAbortRef = useRef(false);
+
+  // Campaign modal state
+  const [campaignModal, setCampaignModal] = useState(null); // null | { tpl }
+  const [campaignCat, setCampaignCat] = useState('');
+  const [campaignCountry, setCampaignCountry] = useState('Alle');
+  const [campaignStatus, setCampaignStatus] = useState('not_contacted');
 
   useEffect(() => {
     if (!scrapeLoading || !scrapeStartedAt) return;
@@ -917,6 +925,92 @@ export default function CRMApp() {
     }
   };
 
+  // ─── Email Campaign helpers ───────────────────────────────────────────────────
+  const getCampaignLeads = () => leads.filter(l => {
+    if (!l.email || !/\S+@\S+\.\S+/.test(l.email)) return false;
+    if (campaignCat) {
+      const lcCat = (l.category || '').toLowerCase();
+      const lcFilter = campaignCat.toLowerCase();
+      if (!lcCat.startsWith(lcFilter) && !lcCat.includes('(' + lcFilter)) return false;
+    }
+    if (campaignCountry !== 'Alle' && l.country !== campaignCountry) return false;
+    if (campaignStatus !== 'Alle' && l.status !== campaignStatus) return false;
+    return true;
+  });
+
+  const openCampaign = (tpl) => {
+    // Pre-fill category from template tags if set
+    const firstTag = (tpl.category_tags || [])[0] || '';
+    const parent = firstTag.match(/^(.+?)\s*\(/) ? firstTag.match(/^(.+?)\s*\(/)[1].trim() : firstTag;
+    setCampaignCat(parent || '');
+    setCampaignCountry('Alle');
+    setCampaignStatus('not_contacted');
+    setCampaignModal({ tpl });
+  };
+
+  const campaignOpenGmail = async () => {
+    if (!campaignModal) return;
+    const { tpl } = campaignModal;
+    const recipients = getCampaignLeads();
+    const bccList = recipients.map(l => l.email.trim()).join(', ');
+    const url = `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(tpl.subject || '')}&body=${encodeURIComponent(tpl.body || '')}`;
+    try { await navigator.clipboard.writeText(bccList); } catch { /* ignore */ }
+    window.open(url, '_blank');
+    msg(`Gmail åbnet · ${recipients.length} BCC-emails kopieret – indsæt i BCC-feltet`);
+  };
+
+  const campaignOpenMailto = () => {
+    if (!campaignModal) return;
+    const { tpl } = campaignModal;
+    const recipients = getCampaignLeads();
+    // mailto: BCC is limited to ~2000 chars – use first 60 recipients
+    const bccChunk = recipients.slice(0, 60).map(l => l.email.trim()).join(',');
+    const href = `mailto:?bcc=${encodeURIComponent(bccChunk)}&subject=${encodeURIComponent(tpl.subject || '')}&body=${encodeURIComponent(tpl.body || '')}`;
+    window.location.href = href;
+    if (recipients.length > 60) {
+      const allBcc = recipients.map(l => l.email.trim()).join(', ');
+      navigator.clipboard.writeText(allBcc).catch(() => {});
+      msg(`Åbner mailprogram med første 60. Alle ${recipients.length} emails kopieret til udklipsholderen – tilføj i BCC.`);
+    } else {
+      msg(`Åbner mailprogram med ${recipients.length} modtagere`);
+    }
+  };
+
+  const campaignCopyBCC = async () => {
+    if (!campaignModal) return;
+    const recipients = getCampaignLeads();
+    const text = recipients.map(l => l.email.trim()).join(', ');
+    try {
+      await navigator.clipboard.writeText(text);
+      msg(`${recipients.length} BCC-emails kopieret til udklipsholderen`);
+    } catch (e) { msg('Kunne ikke kopiere: ' + e.message, 'err'); }
+  };
+
+  const campaignMarkSent = async () => {
+    if (!campaignModal) return;
+    const recipients = getCampaignLeads();
+    if (!recipients.length) return msg('Ingen leads valgt', 'err');
+    if (!confirm(`Markér ${recipients.length} leads som "Outreach sendt"?`)) return;
+    setSaving(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const CHUNK = 50;
+      const ids = recipients.map(l => l.id);
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        await supabase.from('leads').update({ status: 'outreach_done' }).in('id', ids.slice(i, i + CHUNK));
+      }
+      const rows = ids.map(id => ({ lead_id: id, date: today, by: 'Jeppe', note: `Email kampagne: ${campaignModal.tpl.name}`, sale_info: '' }));
+      const OCHUNK = 100;
+      for (let i = 0; i < rows.length; i += OCHUNK) {
+        await supabase.from('outreaches').insert(rows.slice(i, i + OCHUNK));
+      }
+      await loadLeads();
+      msg(`${recipients.length} leads opdateret til "Outreach sendt"`);
+      setCampaignModal(null);
+    } catch (e) { msg('Fejl: ' + e.message, 'err'); }
+    setSaving(false);
+  };
+
   const openTemplateMail = (lead) => {
     if (!lead) return;
     const tpl = templates.find(t => t.id === detailTplId);
@@ -944,31 +1038,66 @@ export default function CRMApp() {
     }
   };
 
-  const runScrape = async () => {
-    const urls = (scrapeUrls || '').split(/\r?\n/).map(u => u.trim()).filter(Boolean);
-    if (!urls.length) return msg('Indsæt mindst én URL', 'err');
+  // Core sequential scraper – processes one URL at a time, shows live progress, never times out
+  const runScrapeUrls = async (urlList, country, category) => {
+    if (!urlList.length) return msg('Indsæt mindst én URL', 'err');
     setScrapeLoading(true);
     setScrapeStartedAt(Date.now());
     setScrapeElapsed(0);
     setScrapeErrors([]);
     setScrapeRows([]);
-    try {
-      const res = await fetch('/api/scrape-emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls, country: scrapeCountry, category: scrapeCategory }),
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' – serveren returnerede en fejl. Prøv med færre URLs.');
-      let data;
-      try { data = await res.json(); } catch { throw new Error('Serveren svarede ikke med gyldigt JSON – forespørgslen tog sandsynligvis for lang tid. Prøv med færre URLs.'); }
-      const rows = (data.leads || []).map(r => ({ ...r, _editCat: r.category || scrapeCategory || '' }));
-      setScrapeRows(rows);
-      setScrapeErrors(data.errors || []);
-      msg(rows.length + ' leads fundet');
-    } catch (e) {
-      msg('Fejl ved scraping: ' + (e.message || ''), 'err');
+    scrapeAbortRef.current = false;
+    setScrapeProgress({ done: 0, total: urlList.length, current: '' });
+
+    const allRows = [];
+    const allErrors = [];
+
+    for (let i = 0; i < urlList.length; i++) {
+      if (scrapeAbortRef.current) break;
+      const url = urlList[i];
+      setScrapeProgress({ done: i, total: urlList.length, current: url });
+      try {
+        const res = await fetch('/api/scrape-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls: [url], country, category }),
+        });
+        let data;
+        if (!res.ok) {
+          allErrors.push({ url, reason: 'HTTP ' + res.status });
+        } else {
+          try { data = await res.json(); } catch { data = { leads: [], errors: [{ url, reason: 'invalid_json' }] }; }
+          for (const r of (data.leads || [])) {
+            if (!allRows.some(x => x.email && x.email === r.email)) {
+              allRows.push({ ...r, _editCat: r.category || category || '' });
+            }
+          }
+          allErrors.push(...(data.errors || []));
+        }
+      } catch (e) {
+        allErrors.push({ url, reason: e.message || 'network_error' });
+      }
+      // Show partial results live
+      setScrapeRows([...allRows]);
+      setScrapeErrors([...allErrors]);
     }
+
+    setScrapeProgress({ done: urlList.length, total: urlList.length, current: '' });
+    msg(allRows.length + ' leads fundet');
     setScrapeLoading(false);
+  };
+
+  const runScrape = () => {
+    const urls = (scrapeUrls || '').split(/\r?\n/).map(u => u.trim()).filter(Boolean);
+    const effectiveCountry = scrapeCustomCountry.trim() || scrapeCountry;
+    const effectiveCategory = scrapeCustomCategory.trim() || scrapeCategory;
+    runScrapeUrls(urls, effectiveCountry, effectiveCategory);
+  };
+
+  const cancelScrape = () => {
+    scrapeAbortRef.current = true;
+    setScrapeLoading(false);
+    msg('Scraping stoppet – resultater er gemt');
   };
 
   const generateSmartUrls = (autoRun = false) => {
@@ -981,7 +1110,7 @@ export default function CRMApp() {
     } else if (effectiveCategory && SMART_SEARCH_TERMS[effectiveCategory]?.[effectiveCountry]) {
       terms = SMART_SEARCH_TERMS[effectiveCategory][effectiveCountry];
     } else {
-      const emailKw = ['Danmark', 'Norge', 'Sverige'].includes(effectiveCountry) ? '"e-mail" OR "kontakt@"' : '"email" OR "contact@"';
+      const emailKw = ['Danmark', 'Norge', 'Sverige'].includes(effectiveCountry) ? '"e-post" OR "kontakt@"' : '"email" OR "contact@"';
       terms = [
         `${effectiveCategory || 'kontakt'} ${emailKw} site:${domain.split('.').slice(1).join('.')}`,
         `${effectiveCategory} kontakt ${effectiveCountry}`,
@@ -991,29 +1120,7 @@ export default function CRMApp() {
     setScrapeUrls(urls.join('\n'));
     msg(urls.length + ' søge-URLs genereret');
     if (autoRun) {
-      setTimeout(() => {
-        setScrapeLoading(true);
-        setScrapeStartedAt(Date.now());
-        setScrapeElapsed(0);
-        setScrapeErrors([]);
-        setScrapeRows([]);
-        fetch('/api/scrape-emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ urls, country: effectiveCountry, category: effectiveCategory }),
-        }).then(async r => {
-          let data;
-          try { data = await r.json(); } catch { data = { leads: [], errors: [{ url: '', reason: 'server_timeout_or_invalid_response' }] }; }
-          const rows = (data.leads || []).map(row => ({ ...row, _editCat: row.category || effectiveCategory || '' }));
-          setScrapeRows(rows);
-          setScrapeErrors(data.errors || []);
-          msg(rows.length + ' leads fundet');
-          setScrapeLoading(false);
-        }).catch(e => {
-          msg('Fejl ved scraping: ' + (e.message || ''), 'err');
-          setScrapeLoading(false);
-        });
-      }, 100);
+      setTimeout(() => runScrapeUrls(urls, effectiveCountry, effectiveCategory), 80);
     }
   };
 
@@ -2357,6 +2464,7 @@ export default function CRMApp() {
                         </td>
                         <td style={{ padding: '13px 14px', color: '#4b5563', fontSize: 12, whiteSpace: 'nowrap' }}>{(t.updated_at || t.created_at || '').slice(0, 10)}</td>
                         <td style={{ padding: '13px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button className="btn" style={{ fontSize: 11, padding: '4px 10px', marginRight: 6, background: '#7c3aed', color: '#fff' }} onClick={e => { e.stopPropagation(); openCampaign(t); }}>✉ Send</button>
                           <button className="btn btn-g" style={{ fontSize: 11, padding: '4px 10px', marginRight: 6 }} onClick={e => { e.stopPropagation(); openEditTemplate(t); }}>Rediger</button>
                           <button className="btn btn-d" style={{ fontSize: 11, padding: '4px 8px' }} onClick={e => { e.stopPropagation(); deleteTemplate(t); }}>Slet</button>
                         </td>
@@ -3081,6 +3189,14 @@ export default function CRMApp() {
               <button className="btn btn-g" style={{ fontSize: 12, padding: '7px 14px', marginLeft: 'auto' }} disabled={bulkSel.size === 0} onClick={copyEmailsBulk}>
                 Kopier emails ({bulkSel.size})
               </button>
+              {templates.length > 0 && (
+                <button className="btn" style={{ fontSize: 12, padding: '7px 14px', background: '#7c3aed', color: '#fff', fontWeight: 600 }} onClick={() => {
+                  const firstTpl = templates.find(t => t.active) || templates[0];
+                  if (firstTpl) openCampaign(firstTpl);
+                }}>
+                  ✉ Send kampagne
+                </button>
+              )}
               <button className="btn btn-v" style={{ fontSize: 12, padding: '7px 16px' }} onClick={resetFiltersAndSort}>Nulstil filtre</button>
               <span style={{ fontSize: 13, color: '#4b5563' }}>{filtered.length} leads</span>
             </div>
@@ -3240,10 +3356,17 @@ export default function CRMApp() {
                   <div style={{ marginTop: 12, background: '#0d1420', borderRadius: 10, padding: '12px 16px', border: '1px solid #1a2332' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                       <div style={{ width: 20, height: 20, border: '2.5px solid #1f2937', borderTop: '2.5px solid #0ea5e9', borderRadius: '50%', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>Scraper – dette kan tage 1-3 minutter</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0' }}>
+                        URL {scrapeProgress.done + 1}/{scrapeProgress.total} · {scrapeRows.length} leads fundet · {scrapeElapsed}s
+                      </span>
+                      <button className="btn btn-d" style={{ fontSize: 11, padding: '3px 10px', marginLeft: 'auto' }} onClick={cancelScrape}>Stop</button>
                     </div>
-                    <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                      Behandler {(scrapeUrls || '').split(/\r?\n/).filter(Boolean).length} URL{(scrapeUrls || '').split(/\r?\n/).filter(Boolean).length !== 1 ? "'er" : ""} · {scrapeElapsed}s gået · undersider + kontaktsider undersøges
+                    {/* Progress bar */}
+                    <div style={{ height: 4, background: '#1f2937', borderRadius: 2, marginBottom: 8, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: '#0ea5e9', borderRadius: 2, transition: 'width 0.4s', width: `${scrapeProgress.total > 0 ? Math.round((scrapeProgress.done / scrapeProgress.total) * 100) : 0}%` }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {scrapeProgress.current ? `Behandler: ${scrapeProgress.current}` : 'Forbereder...'}
                     </div>
                   </div>
                 )}
@@ -3255,9 +3378,9 @@ export default function CRMApp() {
                     disabled={scrapeLoading}
                     style={{ height: 40, fontSize: 14, paddingLeft: 20, paddingRight: 20, fontWeight: 700 }}
                   >
-                    {scrapeLoading ? '⏳ Scraper...' : '🚀 Start scraping'}
+                    {scrapeLoading ? `⏳ ${scrapeProgress.done}/${scrapeProgress.total} URLs…` : '🚀 Start scraping'}
                   </button>
-                  {!!scrapeRows.length && (
+                  {!!scrapeRows.length && !scrapeLoading && (
                     <button className="btn btn-g" onClick={clearScrape} style={{ height: 40 }}>Ryd</button>
                   )}
                 </div>
@@ -3529,6 +3652,134 @@ export default function CRMApp() {
           </div>
         </div>
       )}
+
+      {/* MODAL: Email Campaign ────────────────────────────────────────────── */}
+      {campaignModal && (() => {
+        const { tpl } = campaignModal;
+        const recipients = getCampaignLeads();
+        const catOptions = [...new Set(leads.map(l => {
+          const m = (l.category || '').match(/^(.+?)\s*\(/);
+          return m ? m[1].trim() : (l.category || '');
+        }).filter(Boolean))].sort();
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: 20 }}
+            onClick={e => { if (e.target === e.currentTarget) setCampaignModal(null); }}>
+            <div style={{ background: '#111827', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.9)', border: '1px solid #1f2937', overflow: 'hidden' }}>
+
+              {/* Header */}
+              <div style={{ padding: '16px 22px', background: '#080d18', borderBottom: '1px solid #1f2937', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: '#e2e8f0' }}>✉ Send email kampagne</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Template: <span style={{ color: '#a78bfa' }}>{tpl.name}</span></div>
+                </div>
+                <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => setCampaignModal(null)}>Luk</button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 0 }}>
+                {/* Template preview */}
+                <div style={{ padding: '14px 22px', borderBottom: '1px solid #1f2937', background: '#0a0f1a' }}>
+                  <div style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Email indhold</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#e2e8f0', marginBottom: 4 }}>Emne: {tpl.subject || <span style={{ color: '#374151' }}>—</span>}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', whiteSpace: 'pre-wrap', maxHeight: 100, overflow: 'hidden', position: 'relative' }}>
+                    {(tpl.body || '').slice(0, 350)}{(tpl.body || '').length > 350 ? '…' : ''}
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div style={{ padding: '14px 22px', borderBottom: '1px solid #1f2937' }}>
+                  <div style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Filtrer modtagere</div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Kategori</label>
+                      <select className="inp" style={{ height: 36, minWidth: 180 }} value={campaignCat} onChange={e => setCampaignCat(e.target.value)}>
+                        <option value="">Alle kategorier</option>
+                        {catOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Land</label>
+                      <select className="inp" style={{ height: 36, minWidth: 140 }} value={campaignCountry} onChange={e => setCampaignCountry(e.target.value)}>
+                        <option value="Alle">Alle lande</option>
+                        {[...new Set([...COUNTRIES, ...allCountries])].sort().map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Status</label>
+                      <select className="inp" style={{ height: 36, minWidth: 170 }} value={campaignStatus} onChange={e => setCampaignStatus(e.target.value)}>
+                        <option value="Alle">Alle statusser</option>
+                        {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#9ca3af', paddingBottom: 6 }}>
+                      <span style={{ fontWeight: 700, fontSize: 22, color: recipients.length > 0 ? '#a78bfa' : '#374151' }}>{recipients.length}</span> modtagere
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recipients preview */}
+                <div style={{ padding: '10px 22px 14px', borderBottom: '1px solid #1f2937', maxHeight: 160, overflowY: 'auto' }}>
+                  {recipients.length === 0 ? (
+                    <div style={{ fontSize: 13, color: '#374151', fontStyle: 'italic' }}>Ingen leads matcher filteret, eller de mangler email.</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {recipients.slice(0, 80).map(l => (
+                        <span key={l.id} style={{ fontSize: 11, padding: '2px 8px', background: '#1f2937', borderRadius: 99, color: '#9ca3af', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.name}>
+                          {l.email}
+                        </span>
+                      ))}
+                      {recipients.length > 80 && <span style={{ fontSize: 11, color: '#4b5563', alignSelf: 'center' }}>…+{recipients.length - 80} mere</span>}
+                    </div>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div style={{ padding: '16px 22px' }}>
+                  <div style={{ fontSize: 11, color: '#4b5563', marginBottom: 12 }}>
+                    Vælg hvordan du vil sende. BCC-listen kopieres automatisk til udklipsholderen.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <button
+                      className="btn"
+                      style={{ background: '#1a73e8', color: '#fff', fontWeight: 700, padding: '10px 18px', fontSize: 13 }}
+                      disabled={recipients.length === 0}
+                      onClick={campaignOpenGmail}
+                    >
+                      Åbn i Gmail
+                      <span style={{ fontSize: 10, opacity: 0.7, display: 'block', fontWeight: 400 }}>+ BCC kopieres automatisk</span>
+                    </button>
+                    <button
+                      className="btn btn-g"
+                      style={{ fontWeight: 600, padding: '10px 18px', fontSize: 13 }}
+                      disabled={recipients.length === 0}
+                      onClick={campaignOpenMailto}
+                    >
+                      Åbn i mailprogram
+                      <span style={{ fontSize: 10, opacity: 0.6, display: 'block', fontWeight: 400 }}>Outlook, Apple Mail mv.</span>
+                    </button>
+                    <button
+                      className="btn btn-g"
+                      style={{ padding: '10px 14px', fontSize: 12 }}
+                      disabled={recipients.length === 0}
+                      onClick={campaignCopyBCC}
+                    >
+                      Kopier BCC-liste
+                    </button>
+                    <div style={{ flex: 1 }} />
+                    <button
+                      className="btn"
+                      style={{ background: '#14532d', color: '#4ade80', border: '1px solid #16a34a55', padding: '10px 16px', fontSize: 12 }}
+                      disabled={recipients.length === 0 || saving}
+                      onClick={campaignMarkSent}
+                    >
+                      {saving ? 'Gemmer...' : `✓ Markér ${recipients.length} som "Outreach sendt"`}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL: Template preview — email-style popup */}
       {previewTpl && (
