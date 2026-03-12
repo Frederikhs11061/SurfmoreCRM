@@ -3287,42 +3287,27 @@ export default function CRMApp() {
             </div>
 
             {bulk && (
-              <div style={{ background: 'linear-gradient(135deg,#1e1b4b,#0f172a)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 14, padding: '16px 20px', marginBottom: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
-                {/* Top row: label + select/deselect + delete */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, background: 'rgba(124,58,237,0.15)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(124,58,237,0.25)' }}>
-                    Bulk · {bulkSel.size} valgt
-                  </div>
-                  <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setBulkSel(new Set(filtered.map(l => l.id)))}>Vælg alle ({filtered.length})</button>
-                  <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setBulkSel(new Set())}>Fravælg alle</button>
+              <div style={{ background: 'linear-gradient(135deg,#1e1b4b,#0f172a)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 14, padding: '12px 16px', marginBottom: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Row 1: selection controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, background: 'rgba(124,58,237,0.15)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(124,58,237,0.25)', whiteSpace: 'nowrap' }}>
+                    {bulkSel.size} valgt
+                  </span>
+                  <button className="btn btn-g" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setBulkSel(new Set(filtered.map(l => l.id)))}>Vælg alle ({filtered.length})</button>
+                  <button className="btn btn-g" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => setBulkSel(new Set())}>Fravælg alle</button>
                   <div style={{ flex: 1 }} />
-                  <button className="btn btn-d" style={{ padding: '6px 14px', fontSize: 12 }} disabled={saving || bulkSel.size === 0} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
+                  <button className="btn btn-d" style={{ padding: '4px 12px', fontSize: 12 }} disabled={saving || bulkSel.size === 0} onClick={bulkDelete}>Slet ({bulkSel.size})</button>
                 </div>
-                {/* Bottom row: fields + apply */}
-                <div style={{ display: 'grid', gridTemplateColumns: '160px 150px 90px 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
-                  <div>
-                    <label style={{ fontSize: 11, marginBottom: 5 }}>Sæt status</label>
-                    <select className="inp" style={{ height: 36, fontSize: 13 }} value={bulkSale.trim() ? 'won' : bulkSt} onChange={e => setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>
-                      {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, marginBottom: 5 }}>Outreach dato</label>
-                    <input className="inp" type="date" style={{ height: 36, fontSize: 13 }} value={bulkDate} onChange={e => setBulkDate(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, marginBottom: 5 }}>Af</label>
-                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkBy} onChange={e => setBulkBy(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, marginBottom: 5 }}>Outreach besked</label>
-                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="f.eks. Email sendt" />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, marginBottom: 5 }}>Salg <span style={{ color: '#22c55e' }}>(→ Solgt)</span></label>
-                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkSale} onChange={e => setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke" />
-                  </div>
-                  <button className="btn" style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', padding: '0 20px', height: 36, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(124,58,237,0.4)' }} disabled={saving || bulkSel.size === 0} onClick={applyBulk}>
+                {/* Row 2: fields inline (no labels) */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select className="inp" style={{ height: 34, fontSize: 13, flex: '0 0 150px' }} value={bulkSale.trim() ? 'won' : bulkSt} onChange={e => setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>
+                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                  <input className="inp" type="date" style={{ height: 34, fontSize: 13, flex: '0 0 140px' }} value={bulkDate} onChange={e => setBulkDate(e.target.value)} />
+                  <input className="inp" style={{ height: 34, fontSize: 13, flex: '0 0 80px' }} value={bulkBy} onChange={e => setBulkBy(e.target.value)} placeholder="Af" />
+                  <input className="inp" style={{ height: 34, fontSize: 13, flex: 1 }} value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="Outreach besked" />
+                  <input className="inp" style={{ height: 34, fontSize: 13, flex: 1 }} value={bulkSale} onChange={e => setBulkSale(e.target.value)} placeholder="Salg (→ sætter Solgt)" />
+                  <button className="btn" style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', padding: '0 18px', height: 34, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', flex: 'none', boxShadow: '0 4px 12px rgba(124,58,237,0.4)' }} disabled={saving || bulkSel.size === 0} onClick={applyBulk}>
                     {saving ? 'Gemmer…' : `Anvend på ${bulkSel.size}`}
                   </button>
                 </div>
