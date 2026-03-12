@@ -483,6 +483,7 @@ export default function CRMApp() {
   const [deleteAllStep, setDeleteAllStep] = useState(0);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
   const [dupModal, setDupModal] = useState(null);
+  const [previewTpl, setPreviewTpl] = useState(null);
 
   // ── Auth session ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1733,22 +1734,32 @@ export default function CRMApp() {
           ];
           const maxPipe = Math.max(...pipelineStages.map(s => s.count), 1);
 
-          // Recent activity: batch imports (grouped by created_at date) + recent outreaches
+          // Recent activity: batch imports (grouped by date, with category breakdown) + outreaches by category
           const importBatches = (() => {
             const groups = {};
             for (const l of leads) {
               const d = (l.created_at || '').slice(0, 10);
               if (!d) continue;
-              if (!groups[d]) groups[d] = { date: d, count: 0 };
+              if (!groups[d]) groups[d] = { date: d, count: 0, cats: {} };
               groups[d].count++;
+              const { base } = splitCategory(l.category || 'Andet');
+              groups[d].cats[base] = (groups[d].cats[base] || 0) + 1;
             }
             return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
           })();
-          const recentOutreaches = leads
-            .flatMap(l => (l.outreaches || []).map(o => ({ ...o, leadName: l.name, leadId: l.id })))
-            .filter(o => o.date)
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-            .slice(0, 6);
+          const outreachesByCategory = (() => {
+            const groups = {};
+            for (const l of leads) {
+              for (const o of (l.outreaches || [])) {
+                const { base, sub } = splitCategory(l.category || 'Andet');
+                const key = l.category || 'Andet';
+                if (!groups[key]) groups[key] = { category: key, base, sub, count: 0, lastDate: '' };
+                groups[key].count++;
+                if ((o.date || '') > groups[key].lastDate) groups[key].lastDate = o.date;
+              }
+            }
+            return Object.values(groups).sort((a, b) => b.lastDate.localeCompare(a.lastDate)).slice(0, 8);
+          })();
 
           // Follow-up: leads with outreach_done but oldest last outreach
           const needFollowUp = leads
@@ -1839,39 +1850,50 @@ export default function CRMApp() {
                     <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => setView('activity')}>Se alle →</button>
                   </div>
 
-                  {/* Batch imports */}
+                  {/* Batch imports with category breakdown */}
                   {importBatches.length > 0 && (
                     <div style={{ marginBottom: 12 }}>
                       <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Imports</div>
-                      {importBatches.map((b, i) => (
-                        <div key={b.date} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < importBatches.length - 1 ? '1px solid #0d1420' : 'none' }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0 }} />
-                          <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{b.count} leads tilføjet</div>
-                          <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(b.date)}</div>
-                        </div>
-                      ))}
+                      {importBatches.map((b, i) => {
+                        const topCats = Object.entries(b.cats || {}).sort((x, y) => y[1] - x[1]).slice(0, 3);
+                        return (
+                          <div key={b.date} style={{ padding: '7px 0', borderBottom: i < importBatches.length - 1 ? '1px solid #0d1420' : 'none' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0 }} />
+                              <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{b.count} leads tilføjet</div>
+                              <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(b.date)}</div>
+                            </div>
+                            {topCats.length > 0 && (
+                              <div style={{ paddingLeft: 17, marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
+                                {topCats.map(([cat, cnt]) => (
+                                  <span key={cat} style={{ fontSize: 10, color: '#4b5563' }}>{cat}: {cnt}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* Recent outreaches */}
-                  {recentOutreaches.length > 0 && (
+                  {/* Outreaches grouped by category */}
+                  {outreachesByCategory.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Seneste outreaches</div>
-                      {recentOutreaches.map((o, i) => (
-                        <div key={o.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderBottom: i < recentOutreaches.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
-                          onClick={() => { const l = leads.find(x => x.id === o.leadId); if (l) { setSel(l); setView('detail'); } }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: o.sale_info ? '#22c55e' : '#3b82f6', marginTop: 4, flexShrink: 0 }} />
+                      <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Outreaches pr. kategori</div>
+                      {outreachesByCategory.map((g, i) => (
+                        <div key={g.category} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderBottom: i < outreachesByCategory.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
+                          onClick={() => { setFCats(new Set([g.category])); setView('list'); }}>
+                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', marginTop: 4, flexShrink: 0 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.leadName}</div>
-                            <div style={{ fontSize: 11, color: '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.note || 'Outreach sendt'}</div>
-                            {o.by && <div style={{ fontSize: 10, color: '#374151', marginTop: 1 }}>af {o.by}</div>}
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>{g.base}{g.sub ? ` (${g.sub})` : ''}</div>
+                            <div style={{ fontSize: 11, color: '#4b5563' }}>{g.count} outreach{g.count !== 1 ? 'es' : ''} sendt</div>
                           </div>
-                          <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(o.date)}</div>
+                          <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(g.lastDate)}</div>
                         </div>
                       ))}
                     </div>
                   )}
-                  {importBatches.length === 0 && recentOutreaches.length === 0 && <div style={{ color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu</div>}
+                  {importBatches.length === 0 && outreachesByCategory.length === 0 && <div style={{ color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu</div>}
                 </div>
               </div>
 
@@ -2011,87 +2033,89 @@ export default function CRMApp() {
 
         {/* TEMPLATES */}
         {view === 'templates' && (
-          <div style={{ padding: 28, display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 20, alignItems: 'flex-start' }}>
-            {/* Liste over templates */}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div>
-                  <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Mail templates</h2>
-                  <div style={{ fontSize: 13, color: '#4b5563' }}>Gem dine standard outbound-mails med tokens og kategorier</div>
-                </div>
-                <button className="btn btn-p" onClick={openNewTemplate}>+ Ny template</button>
+          <div style={{ padding: 28, maxWidth: 1100 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontWeight: 700, marginBottom: 4 }}>Mail templates</h2>
+                <div style={{ fontSize: 13, color: '#4b5563' }}>Standard outbound-mails med tokens og kategorier · klik på en template for at se den</div>
               </div>
-              <div className="table-wrapper" style={{ ...CC.card, padding: 14 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <button className="btn btn-p" onClick={openNewTemplate}>+ Ny template</button>
+            </div>
+
+            {/* Template list */}
+            <div style={{ ...CC.card, overflow: 'hidden', marginBottom: editTpl ? 20 : 0 }}>
+              {(!templates || templates.length === 0) ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#4b5563', fontSize: 13 }}>
+                  Ingen templates endnu. Klik &ldquo;Ny template&rdquo; for at oprette din første.
+                </div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid #1f2937' }}>
-                      {['Navn', 'Type', 'Sprog', 'Kategorier', 'Aktiv', 'Sidst opdateret', ''].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: '#4b5563' }}>{h}</th>
+                    <tr style={{ background: '#080d18', borderBottom: '1px solid #1f2937' }}>
+                      {['Navn', 'Type', 'Sprog', 'Emne', 'Kategorier', 'Status', 'Opdateret', ''].map(h => (
+                        <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, color: '#4b5563', fontWeight: 700 }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {(!templates || templates.length === 0) && (
-                      <tr>
-                        <td colSpan={7} style={{ padding: 18, fontSize: 13, color: '#4b5563' }}>Ingen templates endnu. Klik &ldquo;Ny template&rdquo; for at oprette din første.</td>
-                      </tr>
-                    )}
-                    {templates.map(t => (
-                      <tr key={t.id} style={{ borderBottom: '1px solid #020617', cursor: 'pointer', background: editTpl && editTpl.id === t.id ? '#020617' : 'transparent' }}
-                        onClick={() => openEditTemplate(t)}>
-                        <td style={{ padding: '8px 10px', fontWeight: 600 }}>{t.name}</td>
-                        <td style={{ padding: '8px 10px', color: '#9ca3af' }}>{t.type}</td>
-                        <td style={{ padding: '8px 10px', color: '#9ca3af' }}>{t.language?.toUpperCase()}</td>
-                        <td style={{ padding: '8px 10px', color: '#6b7280', fontSize: 12, verticalAlign: 'top' }}>
-                          {(!(t.category_tags || []).length) && <span>Global</span>}
-                          {(t.category_tags || []).length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, maxHeight: 72, overflow: 'hidden' }}>
-                              {(t.category_tags || []).slice(0, 3).map(tag => (
-                                <div key={tag} style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                                  {tag}
-                                </div>
-                              ))}
-                              {(t.category_tags || []).length > 3 && (
-                                <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                                  +{(t.category_tags || []).length - 3} flere
-                                </div>
-                              )}
-                            </div>
-                          )}
+                    {templates.map((t, idx) => (
+                      <tr key={t.id}
+                        style={{ borderBottom: idx < templates.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer', transition: 'background 0.1s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#ffffff05'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                        onClick={() => setPreviewTpl(t)}
+                      >
+                        <td style={{ padding: '13px 14px', fontWeight: 700, fontSize: 13, color: '#e2e8f0' }}>{t.name}</td>
+                        <td style={{ padding: '13px 14px' }}>
+                          <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, background: '#1f2937', color: '#9ca3af', whiteSpace: 'nowrap' }}>
+                            {({ cold_outreach: 'Cold outreach', follow_up: 'Follow-up', re_engage: 'Re-engage', partner_intro: 'Partner intro', offer: 'Tilbud' })[t.type] || t.type}
+                          </span>
                         </td>
-                        <td style={{ padding: '8px 10px' }}>
-                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: t.active ? '#14532d' : '#111827', color: t.active ? '#4ade80' : '#6b7280', border: '1px solid ' + (t.active ? '#16a34a55' : '#1f2937') }}>
+                        <td style={{ padding: '13px 14px', color: '#6b7280', fontSize: 12 }}>{(t.language || 'da').toUpperCase()}</td>
+                        <td style={{ padding: '13px 14px', color: '#9ca3af', fontSize: 13, maxWidth: 240 }}>
+                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || <span style={{ color: '#374151' }}>—</span>}</div>
+                        </td>
+                        <td style={{ padding: '13px 14px', fontSize: 12, maxWidth: 200 }}>
+                          {!(t.category_tags || []).length
+                            ? <span style={{ color: '#4b5563', fontStyle: 'italic' }}>Global</span>
+                            : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                {(t.category_tags || []).slice(0, 2).map(tag => (
+                                  <span key={tag} style={{ color: '#6b7280', fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tag}</span>
+                                ))}
+                                {(t.category_tags || []).length > 2 && <span style={{ fontSize: 11, color: '#4b5563' }}>+{(t.category_tags || []).length - 2} flere</span>}
+                              </div>
+                            )}
+                        </td>
+                        <td style={{ padding: '13px 14px' }}>
+                          <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 99, background: t.active ? '#14532d' : '#111827', color: t.active ? '#4ade80' : '#6b7280', border: '1px solid ' + (t.active ? '#16a34a55' : '#1f2937') }}>
                             {t.active ? 'Aktiv' : 'Arkiveret'}
                           </span>
                         </td>
-                        <td style={{ padding: '8px 10px', color: '#4b5563', fontSize: 12 }}>{(t.updated_at || t.created_at || '').slice(0, 10)}</td>
-                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>
+                        <td style={{ padding: '13px 14px', color: '#4b5563', fontSize: 12, whiteSpace: 'nowrap' }}>{(t.updated_at || t.created_at || '').slice(0, 10)}</td>
+                        <td style={{ padding: '13px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-g" style={{ fontSize: 11, padding: '4px 10px', marginRight: 6 }} onClick={e => { e.stopPropagation(); openEditTemplate(t); }}>Rediger</button>
                           <button className="btn btn-d" style={{ fontSize: 11, padding: '4px 8px' }} onClick={e => { e.stopPropagation(); deleteTemplate(t); }}>Slet</button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+              )}
             </div>
 
-            {/* Editor / preview i højre kolonne */}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ ...CC.card, padding: 18, marginBottom: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>Editor</div>
-                  {editTpl && <span style={{ fontSize: 11, color: '#4b5563' }}>ID: {editTpl.id?.slice(0, 8) || 'ny'}</span>}
+            {/* Editor panel — shown below list when active */}
+            {editTpl && (
+              <div style={{ ...CC.card, padding: 26, border: '1px solid #1f293780' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0' }}>{editTpl.id ? `Rediger: ${editTpl.name}` : 'Ny template'}</div>
+                  <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => setEditTpl(null)}>Luk editor</button>
                 </div>
-                {!editTpl && (
-                  <div style={{ fontSize: 13, color: '#4b5563' }}>Vælg en template i listen til venstre, eller klik &ldquo;Ny template&rdquo;.</div>
-                )}
-                {editTpl && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div>
-                      <label>Navn</label>
-                      <input className="inp" value={editTpl.name} onChange={e => setEditTpl({ ...editTpl, name: e.target.value })} />
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'flex-start' }}>
+                  {/* Left col */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div><label>Navn</label><input className="inp" value={editTpl.name} onChange={e => setEditTpl({ ...editTpl, name: e.target.value })} /></div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
                         <label>Type</label>
                         <select className="inp" value={editTpl.type} onChange={e => setEditTpl({ ...editTpl, type: e.target.value })}>
@@ -2110,123 +2134,92 @@ export default function CRMApp() {
                         </select>
                       </div>
                     </div>
+                    <div><label>Fra-email (valgfri)</label><input className="inp" value={editTpl.from_email || ''} onChange={e => setEditTpl({ ...editTpl, from_email: e.target.value })} placeholder="jeppe@surfmore.dk" /></div>
+                    <div><label>Subject</label><input className="inp" value={editTpl.subject} onChange={e => setEditTpl({ ...editTpl, subject: e.target.value })} placeholder="Samarbejde med Surfmore?" /></div>
                     <div>
-                      <label>Fra-email (valgfri)</label>
-                      <input className="inp" value={editTpl.from_email || ''} onChange={e => setEditTpl({ ...editTpl, from_email: e.target.value })} placeholder="f.eks. jeppe@surfmore.dk" />
-                    </div>
-                    <div>
-                      <label>Knyttet til kategorier (valgfri)</label>
+                      <label>Kategorier (valgfri)</label>
                       <div style={{ position: 'relative', marginBottom: 6 }}>
-                        <button type="button" className="btn btn-g" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', fontSize: 13 }}
-                          onClick={() => setTplCatOpen(o => !o)}>
-                          <span style={{ color: tplCats.size ? '#e5e7eb' : '#6b7280' }}>
-                            {tplCats.size ? `${tplCats.size} valgt` : 'Alle kategorier (global)'}
-                          </span>
+                        <button type="button" className="btn btn-g" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', fontSize: 13 }} onClick={() => setTplCatOpen(o => !o)}>
+                          <span style={{ color: tplCats.size ? '#e5e7eb' : '#6b7280' }}>{tplCats.size ? `${tplCats.size} valgt` : 'Alle kategorier (global)'}</span>
                           <span style={{ fontSize: 10 }}>{tplCatOpen ? '▲' : '▼'}</span>
                         </button>
                         {tplCatOpen && (
-                          <div style={{ position: 'absolute', zIndex: 300, top: 'calc(100% + 4px)', left: 0, right: 0, background: '#020617', border: '1px solid #1f2937', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxHeight: 260, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-                            onMouseLeave={() => setTplCatOpen(false)}>
+                          <div style={{ position: 'absolute', zIndex: 300, top: 'calc(100% + 4px)', left: 0, right: 0, background: '#020617', border: '1px solid #1f2937', borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.6)', maxHeight: 260, overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onMouseLeave={() => setTplCatOpen(false)}>
                             <div style={{ padding: '6px 8px', borderBottom: '1px solid #1f2937', display: 'flex', gap: 6, alignItems: 'center' }}>
-                              <input className="inp" style={{ flex: 1, padding: '5px 8px', fontSize: 12 }} placeholder="Søg kategori..." value={tplCatSearch} onChange={e => setTplCatSearch(e.target.value)} />
+                              <input className="inp" style={{ flex: 1, padding: '5px 8px', fontSize: 12 }} placeholder="Søg..." value={tplCatSearch} onChange={e => setTplCatSearch(e.target.value)} />
                               <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 6px' }} onClick={() => { setTplCats(new Set()); setTplCatSearch(''); }}>Ryd</button>
                               <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 6px' }} onClick={() => setTplCatOpen(false)}>Luk</button>
                             </div>
                             <div style={{ padding: '4px 0', overflowY: 'auto' }}>
-                              {catHierarchy.filter(parent => {
-                                if (!tplCatSearch) return true;
-                                const q = tplCatSearch.toLowerCase();
-                                if (parent.name.toLowerCase().includes(q)) return true;
-                                return parent.subs.some(s => s.toLowerCase().includes(q));
-                              }).map(parent => {
+                              {catHierarchy.filter(parent => { if (!tplCatSearch) return true; const q = tplCatSearch.toLowerCase(); if (parent.name.toLowerCase().includes(q)) return true; return parent.subs.some(s => s.toLowerCase().includes(q)); }).map(parent => {
                                 const catsForParent = parent.subs.length ? parent.subs : [parent.name];
                                 const allSelected = catsForParent.every(c => tplCats.has(c));
                                 const someSelected = !allSelected && catsForParent.some(c => tplCats.has(c));
                                 return (
                                   <div key={parent.name} style={{ borderBottom: '1px solid #020617' }}>
-                                    <button
-                                      type="button"
-                                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: someSelected || allSelected ? '#0ea5e910' : 'transparent', border: 'none', color: '#e5e7eb', fontSize: 13, cursor: 'pointer' }}
-                                      onClick={() => { const n = new Set(tplCats); if (allSelected) { catsForParent.forEach(c => n.delete(c)); } else { catsForParent.forEach(c => n.add(c)); } setTplCats(n); }}
-                                    >
+                                    <button type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: someSelected || allSelected ? '#0ea5e910' : 'transparent', border: 'none', color: '#e5e7eb', fontSize: 13, cursor: 'pointer' }} onClick={() => { const n = new Set(tplCats); if (allSelected) { catsForParent.forEach(c => n.delete(c)); } else { catsForParent.forEach(c => n.add(c)); } setTplCats(n); }}>
                                       <span>{parent.name}</span>
                                       <span style={{ fontSize: 11, color: '#9ca3af' }}>{allSelected ? '✓' : someSelected ? '~' : ''}</span>
                                     </button>
                                     {parent.subs.length > 0 && (
                                       <div style={{ padding: '2px 4px 6px' }}>
-                                        {parent.subs.map(sub => {
-                                          const sel = tplCats.has(sub);
-                                          const subLabel = sub.replace(parent.name, '').replace(/^\s*\(|\)\s*$/g, '').trim();
-                                          return (
-                                            <button key={sub} type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', background: sel ? '#0ea5e908' : 'transparent', border: 'none', color: sel ? '#e5e7eb' : '#9ca3af', fontSize: 12, cursor: 'pointer' }}
-                                              onClick={() => { const n = new Set(tplCats); sel ? n.delete(sub) : n.add(sub); setTplCats(n); }}>
-                                              <span>{subLabel}</span>
-                                              {sel && <span style={{ fontSize: 11 }}>✓</span>}
-                                            </button>
-                                          );
-                                        })}
+                                        {parent.subs.map(sub => { const sel = tplCats.has(sub); const subLabel = sub.replace(parent.name, '').replace(/^\s*\(|\)\s*$/g, '').trim(); return (
+                                          <button key={sub} type="button" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 12px', background: sel ? '#0ea5e908' : 'transparent', border: 'none', color: sel ? '#e5e7eb' : '#9ca3af', fontSize: 12, cursor: 'pointer' }} onClick={() => { const n = new Set(tplCats); sel ? n.delete(sub) : n.add(sub); setTplCats(n); }}>
+                                            <span>{subLabel}</span>{sel && <span style={{ fontSize: 11 }}>✓</span>}
+                                          </button>
+                                        ); })}
                                       </div>
                                     )}
                                   </div>
                                 );
                               })}
-                              {!allCats.length && <div style={{ padding: '8px 10px', fontSize: 11, color: '#4b5563' }}>Ingen kategorier endnu – importer eller opret leads først.</div>}
+                              {!allCats.length && <div style={{ padding: '8px 10px', fontSize: 11, color: '#4b5563' }}>Ingen kategorier endnu.</div>}
                             </div>
                             <div style={{ padding: '6px 8px', borderTop: '1px solid #1f2937', display: 'flex', gap: 6 }}>
-                              <input className="inp" style={{ flex: 1, padding: '7px 9px', fontSize: 12, background: '#020617', borderColor: '#2563eb' }} placeholder="Egen label (fx Produkt: Wings)" value={tplCatCustom} onChange={e => setTplCatCustom(e.target.value)} />
+                              <input className="inp" style={{ flex: 1, padding: '7px 9px', fontSize: 12, background: '#020617', borderColor: '#2563eb' }} placeholder="Egen label..." value={tplCatCustom} onChange={e => setTplCatCustom(e.target.value)} />
                               <button className="btn btn-p" style={{ fontSize: 11, padding: '4px 10px' }} onClick={() => { if (!tplCatCustom.trim()) return; const n = new Set(tplCats); n.add(tplCatCustom.trim()); setTplCats(n); setTplCatCustom(''); }}>Tilføj</button>
                             </div>
                           </div>
                         )}
                       </div>
-                      {(tplCats.size > 0) && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 72, overflowY: 'auto' }}>
+                      {tplCats.size > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                           {[...tplCats].map(tag => (
-                            <span key={tag} style={{ padding: '3px 8px', borderRadius: 999, background: '#020617', border: '1px solid #1f2937', fontSize: 11, color: '#e5e7eb', maxWidth: 200, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            <span key={tag} style={{ padding: '3px 8px', borderRadius: 99, background: '#020617', border: '1px solid #1f2937', fontSize: 11, color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: 5 }}>
                               {tag}
+                              <button style={{ background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 12, lineHeight: 1, padding: 0 }} onClick={() => { const n = new Set(tplCats); n.delete(tag); setTplCats(n); }}>✕</button>
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-                    <div>
-                      <label>Subject</label>
-                      <input className="inp" value={editTpl.subject} onChange={e => setEditTpl({ ...editTpl, subject: e.target.value })} placeholder="f.eks. Samarbejde med Surfmore?" />
-                    </div>
-                    <div>
-                      <label>Body (understøtter &#123;&#123;tokens&#125;&#125;)</label>
-                      <textarea
-                        className="inp"
-                        rows={7}
-                        value={editTpl.body}
-                        onChange={e => setEditTpl({ ...editTpl, body: e.target.value })}
-                        style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
-                        placeholder={'Hej {{lead.contact_person | default:"der"}} ...'}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
                       <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <input type="checkbox" checked={editTpl.active !== false} onChange={e => setEditTpl({ ...editTpl, active: e.target.checked })} />
                         <span style={{ fontSize: 12, color: '#9ca3af' }}>Aktiv</span>
                       </label>
-                      <button className="btn btn-p" style={{ fontSize: 12, padding: '7px 16px' }} disabled={saving} onClick={saveTemplate}>{saving ? 'Gemmer...' : 'Gem template'}</button>
+                      <button className="btn btn-p" style={{ fontSize: 13, padding: '8px 20px' }} disabled={saving} onClick={saveTemplate}>{saving ? 'Gemmer...' : 'Gem template'}</button>
                     </div>
                   </div>
-                )}
-              </div>
-
-              <div style={{ ...CC.card, padding: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Tokens</div>
-                <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 8 }}>
-                  Brug tokens til at personalisere mails. Skriv f.eks. <code style={{ fontFamily: 'monospace' }}>Hej {'{{lead.name}}'}</code> i body.
+                  {/* Right col: body */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <label>Body (understøtter {'{{tokens}}'} )</label>
+                      <textarea className="inp" rows={13} value={editTpl.body} onChange={e => setEditTpl({ ...editTpl, body: e.target.value })} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }} placeholder={'Hej {{lead.contact_person | default:"der"}}\n\nJeg kontakter dig fra Surfmore ...'} />
+                    </div>
+                    <div style={{ ...CC.inner, padding: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#9ca3af', marginBottom: 6 }}>Tilgængelige tokens — klik for at indsætte</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {['{{lead.name}}', '{{lead.category}}', '{{lead.country}}', '{{lead.contact_person | default:"der"}}', '{{user.name}}', '{{company.name}}', '{{lead.notes_last}}'].map(tk => (
+                          <span key={tk} style={{ padding: '3px 8px', borderRadius: 6, background: '#020617', border: '1px solid #1f2937', color: '#9ca3af', fontSize: 11, cursor: 'pointer' }}
+                            onClick={() => setEditTpl(prev => ({ ...prev, body: (prev.body || '') + tk }))}>{tk}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11 }}>
-                  {['{{lead.name}}', '{{lead.category}}', '{{lead.country}}', '{{lead.contact_person | default:"der"}}', '{{user.name}}', '{{company.name}}', '{{lead.notes_last}}'].map(t => (
-                    <span key={t} style={{ padding: '2px 6px', borderRadius: 6, background: '#020617', border: '1px solid #1f2937', color: '#9ca3af' }}>{t}</span>
-                  ))}
-                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -3213,6 +3206,55 @@ export default function CRMApp() {
               <button className="btn btn-d" disabled={deleteAllConfirmText !== 'SLET ALLE' || saving} onClick={deleteAllLeads}>
                 {saving ? 'Sletter...' : 'Slet alle ' + leads.length + ' leads permanent'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Template preview — email-style popup */}
+      {previewTpl && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 20 }}>
+          <div style={{ background: '#111827', borderRadius: 14, width: '100%', maxWidth: 700, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.8)', border: '1px solid #1f2937' }}>
+            {/* Email client chrome */}
+            <div style={{ padding: '14px 20px', background: '#080d18', borderBottom: '1px solid #1f2937', borderRadius: '14px 14px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#e2e8f0' }}>{previewTpl.name}</div>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: previewTpl.active ? '#14532d' : '#111827', color: previewTpl.active ? '#4ade80' : '#6b7280', border: '1px solid ' + (previewTpl.active ? '#16a34a55' : '#1f2937') }}>
+                  {previewTpl.active ? 'Aktiv' : 'Arkiveret'}
+                </span>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: '#1f2937', color: '#6b7280' }}>
+                  {({ cold_outreach: 'Cold outreach', follow_up: 'Follow-up', re_engage: 'Re-engage', partner_intro: 'Partner intro', offer: 'Tilbud' })[previewTpl.type] || previewTpl.type}
+                </span>
+              </div>
+              <button style={{ background: 'transparent', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '2px 6px' }} onClick={() => setPreviewTpl(null)}>✕</button>
+            </div>
+            {/* Email headers (From / To / Subject) */}
+            <div style={{ padding: '14px 22px', background: '#0d1420', borderBottom: '1px solid #0d1420' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '52px 1fr', rowGap: 6, columnGap: 12, fontSize: 13 }}>
+                <span style={{ color: '#4b5563', fontWeight: 600, paddingTop: 1 }}>Fra:</span>
+                <span style={{ color: '#9ca3af' }}>{previewTpl.from_email || <span style={{ fontStyle: 'italic' }}>ikke udfyldt</span>}</span>
+                <span style={{ color: '#4b5563', fontWeight: 600, paddingTop: 1 }}>Til:</span>
+                <span style={{ color: '#6b7280', fontStyle: 'italic' }}>{'{{lead.email}}'}</span>
+                <span style={{ color: '#4b5563', fontWeight: 600, paddingTop: 1 }}>Emne:</span>
+                <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{previewTpl.subject || <span style={{ color: '#4b5563', fontWeight: 400, fontStyle: 'italic' }}>intet emne</span>}</span>
+                {(previewTpl.category_tags || []).length > 0 && <>
+                  <span style={{ color: '#4b5563', fontWeight: 600, paddingTop: 1 }}>Kat.:</span>
+                  <span style={{ color: '#6b7280', fontSize: 12 }}>{(previewTpl.category_tags || []).join(', ')}</span>
+                </>}
+              </div>
+            </div>
+            {/* Email body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '22px 26px', background: '#0a0f1e' }}>
+              <div style={{ fontSize: 14, lineHeight: 1.85, whiteSpace: 'pre-wrap', color: '#d1d5db', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: 600 }}>
+                {previewTpl.body || <span style={{ color: '#374151', fontStyle: 'italic' }}>Ingen body endnu</span>}
+              </div>
+            </div>
+            {/* Action footer */}
+            <div style={{ padding: '12px 20px', background: '#080d18', borderTop: '1px solid #1f2937', borderRadius: '0 0 14px 14px', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(previewTpl.body || ''); msg('Body kopieret'); }}>Kopiér body</button>
+              <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(previewTpl.subject || ''); msg('Emne kopieret'); }}>Kopiér emne</button>
+              <button className="btn btn-p" style={{ fontSize: 12 }} onClick={() => { const t = previewTpl; setPreviewTpl(null); openEditTemplate(t); }}>Rediger</button>
+              <button className="btn btn-g" style={{ fontSize: 12, marginLeft: 'auto' }} onClick={() => setPreviewTpl(null)}>Luk</button>
             </div>
           </div>
         </div>
