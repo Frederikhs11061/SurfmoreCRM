@@ -613,6 +613,7 @@ export default function CRMApp() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [newUserModal, setNewUserModal] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
@@ -2146,75 +2147,129 @@ export default function CRMApp() {
         .login-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 32px rgba(14,165,233,0.5)}
         .login-btn:disabled{opacity:0.5;cursor:not-allowed}
 
-        /* --- MOBILE OPTIMIZATION --- */
-        @media (max-width: 900px) {
-          /* General wrapping & flex */
-          div[style*="display: flex"] { flex-wrap: wrap; }
-          div[style*="display: flex"][style*="flexDirection: column"] { flex-wrap: nowrap; }
-          .navbtn { flex-wrap: nowrap; } 
-          
-          /* Grids to 1 column */
-          div[style*="gridTemplateColumns"],
-          .scraper-grid {
-            grid-template-columns: 1fr !important;
-            gap: 12px !important;
+        /* ── MOBILE ──────────────────────────────────────────── */
+        .mobile-topbar { display: none; }
+        .mobile-overlay { display: none; }
+
+        @media (max-width: 768px) {
+          /* Top bar */
+          .mobile-topbar {
+            display: flex !important;
+            position: fixed; top: 0; left: 0; right: 0; z-index: 7000;
+            height: 52px; background: #0b1120;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            align-items: center; padding: 0 14px; gap: 12px;
           }
-          /* Except small tight 2-col inputs like City/Zip */
-          div[style*="gridTemplateColumns: '1fr 1fr'"][style*="gap: 8"] {
-            grid-template-columns: 1fr 1fr !important;
+          .mobile-overlay {
+            display: block !important;
+            position: fixed; inset: 0; z-index: 7999;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
           }
 
-          /* Main layout: move sidebar to bottom / collapsible */
-          .crm-app-container { flex-direction: column !important; }
+          /* Sidebar: hidden drawer, slides in */
+          .crm-app-container { flex-direction: row !important; }
           .crm-sidebar {
-            width: 100% !important; 
-            height: auto !important; 
-            position: relative !important; 
-            flex-direction: row !important; 
-            overflow-x: auto !important;
-            padding: 6px !important;
-            gap: 4px !important;
-            border-right: none !important;
-            border-bottom: 1px solid rgba(255,255,255,0.05) !important;
-            scrollbar-width: none;
-            background: #060b14 !important;
+            position: fixed !important; top: 0 !important; left: 0 !important;
+            bottom: 0 !important; z-index: 8000 !important;
+            width: 260px !important; height: 100vh !important;
+            flex-direction: column !important;
+            transform: translateX(-100%);
+            transition: transform 0.28s cubic-bezier(0.4,0,0.2,1);
+            overflow-y: auto !important; overflow-x: hidden !important;
           }
-          .crm-sidebar::-webkit-scrollbar { display: none; }
-          .crm-sidebar-header { display: none !important; } 
-          .crm-sidebar .navbtn { 
-            white-space: nowrap; width: auto; padding: 6px 12px !important; font-size: 13px !important;
-            border-left: none !important; border-radius: 8px !important; background: transparent !important;
+          .crm-sidebar.mob-open { transform: translateX(0) !important; }
+          .crm-sidebar-header { display: flex !important; }
+          .crm-sidebar-bottom { display: flex !important; }
+          .nav-section-label { display: block !important; }
+          .crm-sidebar .navbtn { white-space: normal; width: 100%; }
+
+          /* Content: full width, padded below topbar */
+          .crm-content {
+            padding-top: 52px !important;
+            width: 100% !important; min-width: 0 !important;
           }
-          .crm-sidebar .navbtn.active {
-            background: rgba(14,165,233,0.15) !important;
-            color: #fff !important;
-            box-shadow: inset 0 -2px 0 #38bdf8 !important;
+
+          /* Content padding */
+          .crm-content > div { padding: 14px !important; }
+
+          /* Tables: horizontal scroll */
+          .table-wrapper, .scraper-tbl-wrap {
+            overflow-x: auto !important; -webkit-overflow-scrolling: touch;
+            width: 100% !important;
           }
-          .crm-sidebar-bottom { display: none !important; } 
-          
-          /* Tighten Padding to save space */
-          div[style*="padding: 28"] { padding: 12px !important; }
-          div[style*="padding: 20"] { padding: 14px !important; }
-          div[style*="padding: 18px 20px"] { padding: 12px !important; }
-          
-          /* Tables responsive wrapper */
-          table { width: 100% !important; min-width: 600px !important; }
-          .table-wrapper { overflow-x: auto !important; -webkit-overflow-scrolling: touch; width: 100% !important; padding-bottom: 4px; }
-          
-          /* Dashboard cards */
-          div[style*="gridTemplateColumns: repeat(4"] { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
-          
-          /* Modals */
-          div[style*="width: 800"] { width: 96% !important; padding: 16px !important; }
-          div[style*="width: 600"] { width: 96% !important; padding: 16px !important; }
-          div[style*="width: 500"] { width: 96% !important; padding: 16px !important; }
+          table { min-width: 560px !important; }
+
+          /* Bulk actions: stack fields vertically */
+          .bulk-fields-row {
+            flex-direction: column !important;
+            gap: 8px !important;
+          }
+          .bulk-fields-row > * { flex: none !important; width: 100% !important; }
+
+          /* Filter bar: horizontal scroll */
+          .leads-filter-bar {
+            overflow-x: auto !important; -webkit-overflow-scrolling: touch;
+            flex-wrap: nowrap !important; padding-bottom: 6px !important;
+          }
+          .leads-filter-bar > * { flex-shrink: 0 !important; }
+
+          /* Dashboard grid: 2 col */
+          .dash-stats-grid { grid-template-columns: 1fr 1fr !important; }
+
+          /* Scraper grid: 1 col */
+          .scraper-grid { grid-template-columns: 1fr !important; }
+
+          /* Modals: full-screen slide up */
+          .modal-inner {
+            width: 100% !important; max-width: 100% !important;
+            max-height: 95vh !important; border-radius: 20px 20px 0 0 !important;
+            margin-top: auto !important; overflow-y: auto !important;
+          }
+          .modal-wrap {
+            align-items: flex-end !important; padding: 0 !important;
+          }
+
+          /* Campaign modal */
+          .campaign-modal-inner {
+            width: 100% !important; max-width: 100% !important;
+            border-radius: 20px 20px 0 0 !important; max-height: 95vh !important;
+          }
+
+          /* Lead detail panel */
+          .lead-detail-panel {
+            position: fixed !important; inset: 0 !important;
+            z-index: 6000 !important; border-radius: 0 !important;
+            border-left: none !important; border-top: 1px solid rgba(255,255,255,0.06) !important;
+            width: 100% !important; max-width: 100% !important;
+          }
+
+          /* Hide less critical columns in leads table */
+          .col-country, .col-outreach { display: none !important; }
+
+          /* Reduce card padding */
+          .crm-card-pad { padding: 14px !important; }
         }
       `}</style>
 
       {toast && <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 9999, background: toast.t === 'err' ? '#ef4444' : '#22c55e', color: '#fff', padding: '10px 18px', borderRadius: 10, fontWeight: 700, fontSize: 13, boxShadow: '0 8px 30px rgba(0,0,0,0.6)', pointerEvents: 'none', border: '1px solid rgba(255,255,255,0.2)' }}>{toast.m}</div>}
 
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button onClick={() => setMobileMenuOpen(true)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}>
+          <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg,#0ea5e9,#4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>🌊</div>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#f1f5f9' }}>Surfmore CRM</span>
+        </div>
+        <span style={{ fontSize: 12, color: '#475569' }}>{NAV.find(n => n.id === view)?.label || ''}</span>
+      </div>
+
+      {/* Mobile sidebar overlay */}
+      {mobileMenuOpen && <div className="mobile-overlay" onClick={() => setMobileMenuOpen(false)} />}
+
       {/* Sidebar */}
-      <div className="crm-sidebar" style={{ width: 220, background: '#0b1120', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', padding: '0', position: 'sticky', top: 0, height: '100vh', flexShrink: 0, overflowY: 'auto' }}>
+      <div className={'crm-sidebar' + (mobileMenuOpen ? ' mob-open' : '')} style={{ width: 220, background: '#0b1120', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', padding: '0', position: 'sticky', top: 0, height: '100vh', flexShrink: 0, overflowY: 'auto' }}>
         {/* Logo */}
         <div className="crm-sidebar-header" style={{ padding: '20px 18px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2232,7 +2287,7 @@ export default function CRMApp() {
             <div key={section.label}>
               <span className="nav-section-label">{section.label}</span>
               {section.items.map(n => (
-                <button key={n.id} className={'navbtn' + (view === n.id ? ' active' : '')} onClick={() => { setBulk(false); setView(n.id); }}>
+                <button key={n.id} className={'navbtn' + (view === n.id ? ' active' : '')} onClick={() => { setBulk(false); setView(n.id); setMobileMenuOpen(false); }}>
                   <span style={{ opacity: view === n.id ? 1 : 0.7, flexShrink: 0 }}>{n.icon}</span>
                   {n.label}
                 </button>
@@ -2304,7 +2359,7 @@ export default function CRMApp() {
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+      <div className="crm-content" style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
 
         {/* DASHBOARD */}
         {view === 'dashboard' && (() => {
@@ -3324,7 +3379,7 @@ export default function CRMApp() {
                   <button className="btn btn-d" style={{ padding: '4px 12px', fontSize: 12 }} disabled={saving || bulkSel.size === 0} onClick={bulkDelete}>Slet ({bulkSel.size})</button>
                 </div>
                 {/* Row 2: fields inline (no labels) */}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div className="bulk-fields-row" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <select className="inp" style={{ height: 34, fontSize: 13, flex: '0 0 150px' }} value={bulkSale.trim() ? 'won' : bulkSt} onChange={e => setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>
                     {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
@@ -3339,7 +3394,7 @@ export default function CRMApp() {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="leads-filter-bar" style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
               <input className="inp" style={{ maxWidth: 200 }} placeholder="Søg..." value={search} onChange={e => setSearch(e.target.value)} />
 
               {/* Hierarkisk kategori mega-menu */}
@@ -3422,8 +3477,9 @@ export default function CRMApp() {
               <span style={{ fontSize: 13, color: '#4b5563' }}>{filtered.length} leads</span>
             </div>
 
-            <div style={{ ...CC.card, overflow: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div style={{ ...CC.card }}>
+             <div className="table-wrapper" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
                 <thead><tr style={{ borderBottom: '1px solid #1f2937' }}>
                   {bulk && <th style={{ padding: '10px 8px 10px 14px', width: 36 }}></th>}
                   {[
@@ -3440,6 +3496,7 @@ export default function CRMApp() {
                     return (
                       <th
                         key={col.key}
+                        className={col.key === 'country' ? 'col-country' : col.key === 'outreach' ? 'col-outreach' : ''}
                         style={{ padding: '10px 14px', textAlign: 'left', color: isActive ? '#e5e7eb' : '#4b5563', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, whiteSpace: 'nowrap', cursor: 'pointer' }}
                         onClick={() => {
                           if (sortKey === col.key) {
@@ -3467,14 +3524,15 @@ export default function CRMApp() {
                       <td style={{ padding: '10px 14px', fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name}</td>
                       <td style={{ padding: '10px 14px' }}><span className="tag">{lead.category}</span></td>
                       <td style={{ padding: '10px 14px', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.email ? <span style={{ color: '#4b5563' }}>{lead.email}</span> : <span style={{ color: '#ef4444', fontSize: 11, fontWeight: 600 }}>+ Tilføj email</span>}</td>
-                      <td style={{ padding: '10px 14px', color: '#4b5563', whiteSpace: 'nowrap' }}>{lead.country || '—'}</td>
+                      <td className="col-country" style={{ padding: '10px 14px', color: '#4b5563', whiteSpace: 'nowrap' }}>{lead.country || '—'}</td>
                       <td style={{ padding: '10px 14px' }}><StatusBadge value={lead.status} /></td>
-                      <td style={{ padding: '10px 14px', color: '#6b7280' }}>{(lead.outreaches || []).length ? <span style={{ fontSize: 12, lineHeight: 1.6 }}>{lead.outreaches.length}x{lead.outreaches.map(o => o.date).filter(Boolean).map(d => <span key={d} style={{ display: 'block', fontSize: 11, color: '#4b5563' }}>{fmtDate(d)}</span>)}</span> : <span style={{ color: '#1f2937' }}>—</span>}</td>
+                      <td className="col-outreach" style={{ padding: '10px 14px', color: '#6b7280' }}>{(lead.outreaches || []).length ? <span style={{ fontSize: 12, lineHeight: 1.6 }}>{lead.outreaches.length}x{lead.outreaches.map(o => o.date).filter(Boolean).map(d => <span key={d} style={{ display: 'block', fontSize: 11, color: '#4b5563' }}>{fmtDate(d)}</span>)}</span> : <span style={{ color: '#1f2937' }}>—</span>}</td>
                       <td style={{ padding: '10px 14px' }}>{lead.sale_info ? <span style={{ color: '#4ade80', fontSize: 12, fontWeight: 600 }}>{lead.sale_info.slice(0, 32)}</span> : <span style={{ color: '#1f2937' }}>—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+             </div>{/* /table-wrapper */}
             </div>
           </div>
         )}
