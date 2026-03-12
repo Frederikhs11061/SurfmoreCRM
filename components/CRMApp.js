@@ -2118,6 +2118,12 @@ export default function CRMApp() {
         .navbtn:hover{background:rgba(255,255,255,0.05);color:#cbd5e1}
         .navbtn.active{background:rgba(14,165,233,0.12);color:#38bdf8;font-weight:600}
         .nav-section-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#334155;padding:14px 12px 4px;display:block}
+        .login-input{width:100%;height:48px;background:rgba(255,255,255,0.07);border:1.5px solid rgba(255,255,255,0.1);border-radius:12px;color:#f1f5f9;padding:0 16px;font-size:14px;outline:none;transition:all 0.2s;font-family:inherit}
+        .login-input:focus{border-color:#38bdf8;background:rgba(56,189,248,0.08);box-shadow:0 0 0 3px rgba(56,189,248,0.12)}
+        .login-input::placeholder{color:#475569}
+        .login-btn{width:100%;height:50px;border:none;border-radius:12px;background:linear-gradient(135deg,#0ea5e9,#4f46e5);color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.2s;letter-spacing:0.3px;box-shadow:0 8px 24px rgba(14,165,233,0.35);font-family:inherit}
+        .login-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 12px 32px rgba(14,165,233,0.5)}
+        .login-btn:disabled{opacity:0.5;cursor:not-allowed}
 
         /* --- MOBILE OPTIMIZATION --- */
         @media (max-width: 900px) {
@@ -2236,26 +2242,39 @@ export default function CRMApp() {
 
       {/* New user modal */}
       {newUserModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={e => { if (e.target === e.currentTarget) setNewUserModal(false); }}>
-          <div style={{ background: '#0b1120', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 400, boxShadow: '0 24px 80px rgba(0,0,0,0.8)' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4, color: '#f1f5f9' }}>Opret ny bruger</div>
-            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 20 }}>Brugeren modtager en bekræftelsesmail.</div>
-            {newUserError && <div style={{ background: '#ef444415', border: '1px solid #ef444430', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#fca5a5', marginBottom: 12 }}>{newUserError}</div>}
-            {newUserSuccess && <div style={{ background: '#22c55e15', border: '1px solid #22c55e30', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#86efac', marginBottom: 12 }}>{newUserSuccess}</div>}
-            <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>Email</label>
-                <input className="inp" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="bruger@surfmore.dk" required style={{ height: 42 }} />
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,10,0.75)', backdropFilter: 'blur(6px)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={e => { if (e.target === e.currentTarget) { setNewUserModal(false); setNewUserError(''); setNewUserSuccess(''); } }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
+            {/* Glow blobs */}
+            <div style={{ position: 'absolute', width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle,rgba(79,70,229,0.3),transparent 70%)', top: -60, left: -60, pointerEvents: 'none', zIndex: 0 }} />
+            <div style={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle,rgba(14,165,233,0.25),transparent 70%)', bottom: -40, right: -40, pointerEvents: 'none', zIndex: 0 }} />
+            <div style={{ position: 'relative', zIndex: 1, background: 'rgba(11,17,32,0.92)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 24, padding: '32px 30px', boxShadow: '0 32px 80px rgba(0,0,0,0.7)' }}>
+              {/* Icon + title */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 28 }}>
+                <div style={{ width: 52, height: 52, borderRadius: 16, background: 'linear-gradient(135deg,#0ea5e9,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, marginBottom: 12, boxShadow: '0 8px 24px rgba(14,165,233,0.35)' }}>👤</div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#f1f5f9', letterSpacing: 0.3 }}>Opret bruger</div>
+                <div style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>Brugeren er aktiv med det samme</div>
               </div>
-              <div>
-                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 6 }}>Adgangskode</label>
-                <input className="inp" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Minimum 6 tegn" required minLength={6} style={{ height: 42 }} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button type="button" onClick={() => setNewUserModal(false)} style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: '#94a3b8', fontSize: 13, fontWeight: 600, padding: '10px', cursor: 'pointer', fontFamily: 'inherit' }}>Annuller</button>
-                <button type="submit" disabled={newUserLoading || !newUserEmail || !newUserPassword} className="btn btn-p" style={{ flex: 1, justifyContent: 'center', height: 42 }}>{newUserLoading ? 'Opretter...' : 'Opret bruger'}</button>
-              </div>
-            </form>
+              {newUserError && (
+                <div style={{ background: 'rgba(185,28,28,0.15)', border: '1px solid rgba(185,28,28,0.4)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#fca5a5', marginBottom: 16, textAlign: 'center' }}>{newUserError}</div>
+              )}
+              {newUserSuccess && (
+                <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#86efac', marginBottom: 16, textAlign: 'center' }}>{newUserSuccess}</div>
+              )}
+              <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 8, letterSpacing: 0.3 }}>EMAIL</label>
+                  <input className="login-input" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="bruger@surfmore.dk" required />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 8, letterSpacing: 0.3 }}>ADGANGSKODE</label>
+                  <input className="login-input" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Minimum 6 tegn" required minLength={6} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button type="button" onClick={() => { setNewUserModal(false); setNewUserError(''); setNewUserSuccess(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#94a3b8', fontSize: 14, fontWeight: 600, padding: '12px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>Annuller</button>
+                  <button type="submit" disabled={newUserLoading || !newUserEmail || !newUserPassword} className="login-btn" style={{ flex: 1 }}>{newUserLoading ? 'Opretter…' : 'Opret bruger'}</button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -3268,22 +3287,44 @@ export default function CRMApp() {
             </div>
 
             {bulk && (
-              <div style={{ background: '#1e1b4b', border: '1px solid #4c1d9533', borderRadius: 12, padding: '14px 18px', display: 'flex', gap: 14, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 16 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Bulk · {bulkSel.size} valgt</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 10px' }} onClick={() => setBulkSel(new Set(filtered.map(l => l.id)))}>Vælg alle ({filtered.length})</button>
-                    <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 10px' }} onClick={() => setBulkSel(new Set())}>Fravælg alle</button>
+              <div style={{ background: 'linear-gradient(135deg,#1e1b4b,#0f172a)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 14, padding: '16px 20px', marginBottom: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.3)' }}>
+                {/* Top row: label + select/deselect + delete */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8, background: 'rgba(124,58,237,0.15)', padding: '4px 10px', borderRadius: 6, border: '1px solid rgba(124,58,237,0.25)' }}>
+                    Bulk · {bulkSel.size} valgt
                   </div>
+                  <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setBulkSel(new Set(filtered.map(l => l.id)))}>Vælg alle ({filtered.length})</button>
+                  <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => setBulkSel(new Set())}>Fravælg alle</button>
+                  <div style={{ flex: 1 }} />
+                  <button className="btn btn-d" style={{ padding: '6px 14px', fontSize: 12 }} disabled={saving || bulkSel.size === 0} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
                 </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', flex: 1 }}>
-                  <div><label>Sæt status</label><select className="inp" style={{ width: 150 }} value={bulkSale.trim() ? 'won' : bulkSt} onChange={e => setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>{STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
-                  <div><label>Outreach dato</label><input className="inp" type="date" style={{ width: 140 }} value={bulkDate} onChange={e => setBulkDate(e.target.value)} /></div>
-                  <div><label>Af</label><input className="inp" style={{ width: 90 }} value={bulkBy} onChange={e => setBulkBy(e.target.value)} /></div>
-                  <div><label>Outreach besked</label><input className="inp" style={{ width: 180 }} value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="f.eks. Email sendt" /></div>
-                  <div><label>Salg <span style={{ color: '#22c55e', fontSize: 10 }}>(sætter automatisk → Solgt)</span></label><input className="inp" style={{ width: 180 }} value={bulkSale} onChange={e => setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke" /></div>
-                  <button className="btn" style={{ background: '#7c3aed', color: '#fff', padding: '8px 16px', alignSelf: 'flex-end' }} disabled={saving} onClick={applyBulk}>{saving ? 'Gemmer...' : 'Anvend på ' + bulkSel.size}</button>
-                  <button className="btn btn-d" style={{ padding: '8px 16px', alignSelf: 'flex-end', fontSize: 13 }} disabled={saving} onClick={bulkDelete}>Slet valgte ({bulkSel.size})</button>
+                {/* Bottom row: fields + apply */}
+                <div style={{ display: 'grid', gridTemplateColumns: '160px 150px 90px 1fr 1fr auto', gap: 10, alignItems: 'flex-end' }}>
+                  <div>
+                    <label style={{ fontSize: 11, marginBottom: 5 }}>Sæt status</label>
+                    <select className="inp" style={{ height: 36, fontSize: 13 }} value={bulkSale.trim() ? 'won' : bulkSt} onChange={e => setBulkSt(e.target.value)} disabled={!!bulkSale.trim()}>
+                      {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, marginBottom: 5 }}>Outreach dato</label>
+                    <input className="inp" type="date" style={{ height: 36, fontSize: 13 }} value={bulkDate} onChange={e => setBulkDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, marginBottom: 5 }}>Af</label>
+                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkBy} onChange={e => setBulkBy(e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, marginBottom: 5 }}>Outreach besked</label>
+                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkNote} onChange={e => setBulkNote(e.target.value)} placeholder="f.eks. Email sendt" />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, marginBottom: 5 }}>Salg <span style={{ color: '#22c55e' }}>(→ Solgt)</span></label>
+                    <input className="inp" style={{ height: 36, fontSize: 13 }} value={bulkSale} onChange={e => setBulkSale(e.target.value)} placeholder="f.eks. Wingfoil pakke" />
+                  </div>
+                  <button className="btn" style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', padding: '0 20px', height: 36, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(124,58,237,0.4)' }} disabled={saving || bulkSel.size === 0} onClick={applyBulk}>
+                    {saving ? 'Gemmer…' : `Anvend på ${bulkSel.size}`}
+                  </button>
                 </div>
               </div>
             )}
@@ -3358,7 +3399,7 @@ export default function CRMApp() {
                 Kopier emails ({bulkSel.size})
               </button>
               {templates.length > 0 && (
-                <button className="btn" style={{ fontSize: 12, padding: '7px 14px', background: '#7c3aed', color: '#fff', fontWeight: 600 }} onClick={() => {
+                <button className="btn" style={{ fontSize: 12, padding: '7px 14px', background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff', fontWeight: 600, boxShadow: '0 4px 12px rgba(124,58,237,0.35)' }} onClick={() => {
                   const firstTpl = templates.find(t => t.active) || templates[0];
                   if (firstTpl) openCampaign(firstTpl);
                 }}>
@@ -3930,10 +3971,22 @@ export default function CRMApp() {
             <div style={{ background: '#111827', borderRadius: 16, width: '100%', maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.9)', border: '1px solid #1f2937', overflow: 'hidden' }}>
 
               {/* Header */}
-              <div style={{ padding: '16px 22px', background: '#080d18', borderBottom: '1px solid #1f2937', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: '#e2e8f0' }}>✉ Send email kampagne</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Template: <span style={{ color: '#a78bfa' }}>{tpl.name}</span></div>
+              <div style={{ padding: '16px 22px', background: '#080d18', borderBottom: '1px solid #1f2937', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: '#e2e8f0', whiteSpace: 'nowrap' }}>✉ Send email kampagne</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#4b5563', whiteSpace: 'nowrap' }}>Template:</span>
+                    <select
+                      style={{ background: '#111827', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, color: '#a78bfa', fontSize: 13, fontWeight: 600, padding: '5px 10px', outline: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+                      value={tpl.id}
+                      onChange={e => {
+                        const newTpl = templates.find(t => t.id === e.target.value);
+                        if (newTpl) setCampaignModal({ tpl: newTpl });
+                      }}
+                    >
+                      {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => setCampaignModal(null)}>Luk</button>
               </div>
