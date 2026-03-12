@@ -1159,13 +1159,15 @@ export default function CRMApp() {
     setNewUserSuccess('');
     setNewUserLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: newUserEmail.trim(),
-        password: newUserPassword,
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newUserEmail.trim(), password: newUserPassword }),
       });
-      if (error) { setNewUserError(error.message); }
+      const data = await res.json();
+      if (!res.ok) { setNewUserError(data.error || 'Ukendt fejl'); }
       else {
-        setNewUserSuccess('Bruger oprettet! En bekræftelsesmail er sendt til ' + newUserEmail.trim());
+        setNewUserSuccess('Bruger oprettet! ' + newUserEmail.trim() + ' kan nu logge ind.');
         setNewUserEmail('');
         setNewUserPassword('');
       }
