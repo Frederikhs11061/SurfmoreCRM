@@ -479,6 +479,10 @@ export default function CRMApp() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
   const excelRef = useRef();
+  const [lastImportIds, setLastImportIds] = useState([]);
+  const [deleteAllStep, setDeleteAllStep] = useState(0);
+  const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
+  const [dupModal, setDupModal] = useState(null);
 
   // ── Auth session ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -501,6 +505,11 @@ export default function CRMApp() {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // Set outreach "by" to logged-in user's email
+  useEffect(() => {
+    if (user?.email) setNewOtr(o => ({ ...o, by: user.email }));
+  }, [user]);
 
   // ── Load from Supabase ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1120,8 +1129,6 @@ export default function CRMApp() {
   };
 
   const deleteAllLeads = async () => {
-    if (!confirm('Slet ALLE leads permanent? Dette kan ikke fortrydes.')) return;
-    if (!confirm('Er du helt sikker? Alle ' + leads.length + ' leads slettes.')) return;
     setSaving(true);
     try {
       await supabase.from('outreaches').delete().neq('id', '00000000-0000-0000-0000-000000000000');
@@ -1129,6 +1136,8 @@ export default function CRMApp() {
       setLeads([]); msg('Alle leads slettet');
     } catch (e) { msg('Fejl: ' + e.message, 'err'); }
     setSaving(false);
+    setDeleteAllStep(0);
+    setDeleteAllConfirmText('');
   };
 
   const exportBackupCSV = () => {
@@ -1409,27 +1418,77 @@ export default function CRMApp() {
     } catch (e) { msg('Fejl: ' + e.message, 'err'); }
   };
 
-  const importLeads = async () => {
-    if (!iPrev.length) return;
+  const importLeads = async (leadsToImport) => {
+    const list = leadsToImport || iPrev;
+    if (!list.length) return;
     setSaving(true);
     try {
       let skipped = 0;
-      for (const lead of iPrev) {
+      const importedIds = [];
+      for (const lead of list) {
         const { _outreaches, ...leadData } = lead;
         const { data, error } = await supabase.from('leads').insert(leadData).select().single();
         if (error) { console.warn('Lead insert fejl:', leadData.name, error.message); skipped++; continue; }
+        importedIds.push(data.id);
         if (_outreaches && _outreaches.length > 0) {
-          const rows = _outreaches.map(o => ({ lead_id: data.id, by: o.by || 'Jeppe', note: o.note || '', date: o.date || null, sale_info: o.sale_info || '' }));
+          const rows = _outreaches.map(o => ({ lead_id: data.id, by: o.by || user?.email || 'Ukendt', note: o.note || '', date: o.date || null, sale_info: o.sale_info || '' }));
           const { error: oErr } = await supabase.from('outreaches').insert(rows);
           if (oErr) console.warn('Outreach insert fejl for', data.id, oErr.message);
         }
       }
-      if (skipped > 0) msg(`${iPrev.length - skipped} leads importeret (${skipped} sprunget over)`, 'ok');
-      else msg(iPrev.length + ' leads importeret');
+      if (skipped > 0) msg(`${list.length - skipped} leads importeret (${skipped} sprunget over)`, 'ok');
+      else msg(list.length + ' leads importeret');
+      setLastImportIds(importedIds);
+      setDupModal(null);
       await loadLeads();
-      setIText(''); setIPrev([]); setView('list');
+      setIText(''); setIPrev([]);
+      // Stay on import page so user can undo
     } catch (e) { msg('Fejl: ' + e.message, 'err'); }
     setSaving(false);
+  };
+
+  const undoImport = async () => {
+    if (!lastImportIds.length) return;
+    if (!confirm(`Fortryd import? ${lastImportIds.length} leads vil blive slettet permanent.`)) return;
+    setSaving(true);
+    try {
+      const CHUNK = 50;
+      for (let i = 0; i < lastImportIds.length; i += CHUNK) {
+        const batch = lastImportIds.slice(i, i + CHUNK);
+        await supabase.from('outreaches').delete().in('lead_id', batch);
+        await supabase.from('leads').delete().in('id', batch);
+      }
+      setLeads(prev => prev.filter(l => !lastImportIds.includes(l.id)));
+      setLastImportIds([]);
+      msg('Import fortrudt');
+    } catch (e) { msg('Fejl: ' + e.message, 'err'); }
+    setSaving(false);
+  };
+
+  const checkAndImport = async () => {
+    if (!iPrev.length) return;
+    const emailMap = new Map();
+    const nameMap = new Map();
+    for (const l of leads) {
+      if (l.email) emailMap.set(l.email.toLowerCase().trim(), l);
+      nameMap.set(l.name.toLowerCase().trim(), l);
+    }
+    const duplicates = [];
+    const nonDuplicates = [];
+    for (const l of iPrev) {
+      const emailMatch = l.email && emailMap.has(l.email.toLowerCase().trim());
+      const nameMatch = !l.email && nameMap.has((l.name || '').toLowerCase().trim());
+      if (emailMatch || nameMatch) {
+        duplicates.push({ ...l, _matchedBy: emailMatch ? 'email' : 'navn', _existing: emailMatch ? emailMap.get(l.email.toLowerCase().trim()) : nameMap.get((l.name || '').toLowerCase().trim()) });
+      } else {
+        nonDuplicates.push(l);
+      }
+    }
+    if (duplicates.length === 0) {
+      await importLeads(iPrev);
+    } else {
+      setDupModal({ duplicates, nonDuplicates });
+    }
   };
 
   const connectShopify = async () => {
@@ -1683,13 +1742,13 @@ export default function CRMApp() {
               if (!groups[d]) groups[d] = { date: d, count: 0 };
               groups[d].count++;
             }
-            return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+            return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
           })();
           const recentOutreaches = leads
             .flatMap(l => (l.outreaches || []).map(o => ({ ...o, leadName: l.name, leadId: l.id })))
             .filter(o => o.date)
             .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
-            .slice(0, 5);
+            .slice(0, 6);
 
           // Follow-up: leads with outreach_done but oldest last outreach
           const needFollowUp = leads
@@ -1775,11 +1834,14 @@ export default function CRMApp() {
 
                 {/* Recent activity */}
                 <div style={{ ...CC.card, padding: 20, display: 'flex', flexDirection: 'column', gap: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#9ca3af', marginBottom: 14 }}>Seneste aktivitet</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#9ca3af' }}>Seneste aktivitet</div>
+                    <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => setView('activity')}>Se alle →</button>
+                  </div>
 
                   {/* Batch imports */}
                   {importBatches.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
+                    <div style={{ marginBottom: 12 }}>
                       <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Imports</div>
                       {importBatches.map((b, i) => (
                         <div key={b.date} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: i < importBatches.length - 1 ? '1px solid #0d1420' : 'none' }}>
@@ -1798,10 +1860,11 @@ export default function CRMApp() {
                       {recentOutreaches.map((o, i) => (
                         <div key={o.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderBottom: i < recentOutreaches.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
                           onClick={() => { const l = leads.find(x => x.id === o.leadId); if (l) { setSel(l); setView('detail'); } }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', marginTop: 4, flexShrink: 0 }} />
+                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: o.sale_info ? '#22c55e' : '#3b82f6', marginTop: 4, flexShrink: 0 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.leadName}</div>
                             <div style={{ fontSize: 11, color: '#4b5563', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.note || 'Outreach sendt'}</div>
+                            {o.by && <div style={{ fontSize: 10, color: '#374151', marginTop: 1 }}>af {o.by}</div>}
                           </div>
                           <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(o.date)}</div>
                         </div>
@@ -2209,9 +2272,9 @@ export default function CRMApp() {
 
             {/* Danger zone */}
             <div style={{ ...CC.card, padding: 20, marginBottom: 16, border: '1px solid #ef444430' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', marginBottom: 12 }}>Slet alle leads</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', marginBottom: 12 }}>Farezonen</div>
               <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>Sletter permanent alle {leads.length} leads og tilhørende outreaches. Kan ikke fortrydes.</div>
-              <button className="btn btn-d" disabled={saving || leads.length === 0} onClick={deleteAllLeads}>{saving ? 'Sletter...' : 'Slet alle ' + leads.length + ' leads'}</button>
+              <button className="btn btn-d" disabled={saving || leads.length === 0} onClick={() => setDeleteAllStep(1)}>{saving ? 'Sletter...' : 'Slet alle ' + leads.length + ' leads'}</button>
             </div>
 
             {/* Kategori management */}
@@ -2338,7 +2401,9 @@ export default function CRMApp() {
                       ))}</tbody>
                     </table>
                   </div>
-                  <button className="btn btn-p" disabled={saving} onClick={importLeads}>{saving ? 'Importerer...' : 'Importér ' + iPrev.length + ' leads → Supabase'}</button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <button className="btn btn-p" disabled={saving} onClick={checkAndImport}>{saving ? 'Importerer...' : 'Importér ' + iPrev.length + ' leads → Supabase'}</button>
+                  </div>
                 </div>
               )}
             </div>
@@ -3036,7 +3101,169 @@ export default function CRMApp() {
             </div>
           </div>
         )}
+
+        {/* ACTIVITY */}
+        {view === 'activity' && (() => {
+          const allActivity = [
+            ...leads.flatMap(l => (l.outreaches || []).map(o => ({
+              type: 'outreach',
+              date: o.date || l.created_at?.slice(0, 10) || '',
+              title: l.name,
+              sub: o.note || 'Outreach sendt',
+              by: o.by || '',
+              sale: o.sale_info || '',
+              leadId: l.id,
+              id: o.id,
+            }))),
+            ...(() => {
+              const groups = {};
+              for (const l of leads) {
+                const d = (l.created_at || '').slice(0, 10);
+                if (!d) continue;
+                if (!groups[d]) groups[d] = { date: d, count: 0 };
+                groups[d].count++;
+              }
+              return Object.values(groups).map(b => ({
+                type: 'import',
+                date: b.date,
+                title: b.count + ' leads importeret',
+                sub: '',
+                by: '',
+                id: 'imp-' + b.date,
+              }));
+            })(),
+          ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+          return (
+            <div style={{ padding: 28, maxWidth: 720 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+                <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => setView('dashboard')}>← Tilbage</button>
+                <h2 style={{ fontWeight: 700, margin: 0 }}>Al aktivitet</h2>
+                <span style={{ fontSize: 12, color: '#4b5563' }}>{allActivity.length} hændelser</span>
+              </div>
+              <div style={{ ...CC.card, padding: 0, overflow: 'hidden' }}>
+                {allActivity.length === 0 && <div style={{ padding: 24, color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu</div>}
+                {allActivity.map((a, i) => (
+                  <div key={a.id || i}
+                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 18px', borderBottom: i < allActivity.length - 1 ? '1px solid #0d1420' : 'none', cursor: a.type === 'outreach' ? 'pointer' : 'default' }}
+                    onClick={() => { if (a.type === 'outreach') { const l = leads.find(x => x.id === a.leadId); if (l) { setSel(l); setView('detail'); } } }}
+                  >
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'outreach' ? (a.sale ? '#22c55e' : '#3b82f6') : '#6366f1', marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                      {a.sub && <div style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.sub}</div>}
+                      {a.sale && <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>Salg: {a.sale}</div>}
+                      {a.by && <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>af {a.by}</div>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtDate(a.date)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
       </div>
+
+      {/* MODAL: Import fortrudt / success banner */}
+      {lastImportIds.length > 0 && view === 'import' && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: '#0d1420', border: '1px solid #22c55e44', borderRadius: 12, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14, zIndex: 1000, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+          <span style={{ fontSize: 13, color: '#e2e8f0' }}><strong style={{ color: '#22c55e' }}>{lastImportIds.length} leads</strong> importeret</span>
+          <button className="btn btn-d" style={{ fontSize: 12, padding: '5px 14px' }} disabled={saving} onClick={undoImport}>Fortryd</button>
+          <button className="btn btn-g" style={{ fontSize: 12, padding: '5px 14px' }} onClick={() => { setLastImportIds([]); setView('list'); }}>Gå til leads →</button>
+          <button style={{ background: 'transparent', border: 'none', color: '#4b5563', cursor: 'pointer', fontSize: 16, lineHeight: 1 }} onClick={() => setLastImportIds([])}>✕</button>
+        </div>
+      )}
+
+      {/* MODAL: Slet alle leads – trin 1 */}
+      {deleteAllStep === 1 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ ...CC.card, padding: 28, maxWidth: 440, width: '90%', border: '1px solid #ef444455' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444', marginBottom: 10 }}>Er du sikker?</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20, lineHeight: 1.6 }}>
+              Du er ved at slette <strong style={{ color: '#e2e8f0' }}>alle {leads.length} leads</strong> og al tilhørende data permanent. Dette kan ikke fortrydes.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-g" onClick={() => setDeleteAllStep(0)}>Annuller</button>
+              <button className="btn btn-d" onClick={() => setDeleteAllStep(2)}>Fortsæt →</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Slet alle leads – trin 2 */}
+      {deleteAllStep === 2 && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ ...CC.card, padding: 28, maxWidth: 460, width: '90%', border: '2px solid #ef4444' }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>Er du HELT sikker?</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 16, lineHeight: 1.6 }}>
+              Alle <strong style={{ color: '#ef4444' }}>{leads.length} leads</strong> vil blive slettet fra hele databasen inkl. outreaches, noter og al tilhørende data. Dette kan ikke fortrydes.
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>Skriv <strong style={{ color: '#e2e8f0' }}>SLET ALLE</strong> for at bekræfte:</div>
+            <input
+              className="inp"
+              value={deleteAllConfirmText}
+              onChange={e => setDeleteAllConfirmText(e.target.value)}
+              placeholder="SLET ALLE"
+              style={{ marginBottom: 16, borderColor: deleteAllConfirmText === 'SLET ALLE' ? '#ef4444' : '' }}
+            />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button className="btn btn-g" onClick={() => { setDeleteAllStep(0); setDeleteAllConfirmText(''); }}>Annuller</button>
+              <button className="btn btn-d" disabled={deleteAllConfirmText !== 'SLET ALLE' || saving} onClick={deleteAllLeads}>
+                {saving ? 'Sletter...' : 'Slet alle ' + leads.length + ' leads permanent'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Dubletter ved import */}
+      {dupModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+          <div style={{ ...CC.card, padding: 24, maxWidth: 640, width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+              {dupModal.duplicates.length} dublet{dupModal.duplicates.length !== 1 ? 'ter' : ''} fundet
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 14 }}>
+              Disse leads findes allerede i databasen (matchet på {dupModal.duplicates.some(d => d._matchedBy === 'email') ? 'email' : 'navn'}).
+              {dupModal.nonDuplicates.length > 0 && ` ${dupModal.nonDuplicates.length} nye leads er klar til import.`}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16, border: '1px solid #1f2937', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#080d18', position: 'sticky', top: 0 }}>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Nyt (fra fil)</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Eksisterende (i DB)</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Match</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dupModal.duplicates.map((d, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #0d1420', background: i % 2 ? '#ffffff03' : 'transparent' }}>
+                      <td style={{ padding: '6px 10px', fontWeight: 600, color: '#e2e8f0' }}>{d.name}<br /><span style={{ color: '#38bdf8', fontWeight: 400 }}>{d.email || '—'}</span></td>
+                      <td style={{ padding: '6px 10px', color: '#9ca3af' }}>{d._existing?.name}<br /><span style={{ color: '#38bdf8' }}>{d._existing?.email || '—'}</span></td>
+                      <td style={{ padding: '6px 10px', color: '#f59e0b', fontSize: 11 }}>{d._matchedBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button className="btn btn-g" onClick={() => setDupModal(null)}>Annuller</button>
+              {dupModal.nonDuplicates.length > 0 && (
+                <button className="btn btn-p" onClick={() => importLeads(dupModal.nonDuplicates)}>
+                  Tilføj kun nye ({dupModal.nonDuplicates.length})
+                </button>
+              )}
+              <button className="btn btn-g" style={{ borderColor: '#f59e0b44', color: '#f59e0b' }} onClick={() => importLeads([...dupModal.nonDuplicates, ...dupModal.duplicates])}>
+                Tilføj alle alligevel ({dupModal.nonDuplicates.length + dupModal.duplicates.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
