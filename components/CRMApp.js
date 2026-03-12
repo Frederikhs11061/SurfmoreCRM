@@ -631,6 +631,7 @@ export default function CRMApp() {
   const [scrapeSmartKeywords, setScrapeSmartKeywords] = useState('');
   const [scrapeCustomCategory, setScrapeCustomCategory] = useState('');
   const [scrapeCustomCountry, setScrapeCustomCountry] = useState('');
+  const [scrapeClearField, setScrapeClearField] = useState('city');
   const [scrapeProgress, setScrapeProgress] = useState({ done: 0, total: 0, current: '' });
   const scrapeAbortRef = useRef(false);
 
@@ -3454,15 +3455,30 @@ export default function CRMApp() {
                     <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 8 }}>Rediger kategori direkte i tabellen</span>
                   )}
                 </div>
-                <button
-                  className="btn btn-d"
-                  onClick={() => setScrapeRows(prev => prev.map(r => ({ ...r, city: '' })))}
-                  disabled={!scrapeRows.length}
-                  style={{ height: 36, fontSize: 12 }}
-                  title="Slet By-feltet på alle rækker"
-                >
-                  Ryd By
-                </button>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <select
+                    className="inp"
+                    value={scrapeClearField}
+                    onChange={e => setScrapeClearField(e.target.value)}
+                    disabled={!scrapeRows.length}
+                    style={{ height: 36, fontSize: 12, minWidth: 110 }}
+                  >
+                    <option value="name">Navn</option>
+                    <option value="email">Email</option>
+                    <option value="phone">Tlf.</option>
+                    <option value="city">By</option>
+                    <option value="website">Website</option>
+                    <option value="contact_person">Kontaktperson</option>
+                  </select>
+                  <button
+                    className="btn btn-d"
+                    onClick={() => setScrapeRows(prev => prev.map(r => ({ ...r, [scrapeClearField]: '' })))}
+                    disabled={!scrapeRows.length}
+                    style={{ height: 36, fontSize: 12, whiteSpace: 'nowrap' }}
+                  >
+                    Ryd felt
+                  </button>
+                </div>
                 <button className="btn btn-g" onClick={copyScrapeTable} disabled={!scrapeRows.length} style={{ height: 36, fontSize: 12 }}>📋 Kopier (TSV)</button>
                 <button className="btn btn-p" onClick={sendScrapeToImport} disabled={!scrapeRows.length} style={{ height: 36, fontSize: 12, fontWeight: 700 }}>➡ Send {scrapeRows.length || 0} til import</button>
               </div>

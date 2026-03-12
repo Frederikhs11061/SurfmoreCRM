@@ -438,6 +438,13 @@ function extractEmailsFromHtml(html) {
     }
   }
 
+  // Obfuscated emails: info[at]domain.se, info(at)domain.se, info {at} domain.se
+  const obfRe = /([A-Z0-9._%+\-]+)\s*(?:\[at\]|\(at\)|\{at\}| at )\s*([A-Z0-9.\-]+\.[A-Z]{2,})/gi;
+  while ((m = obfRe.exec(decoded))) {
+    let email = (m[1] + '@' + m[2]).toLowerCase().replace(/[.\-]+$/, '');
+    if (isValidLeadEmail(email)) emails.add(email);
+  }
+
   // JSON-LD structured data (most reliable source)
   const jsonLdRe = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   while ((m = jsonLdRe.exec(html))) {
@@ -772,7 +779,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country, deadline 
   }).slice(0, 60);
 
   // Determine if this is a directory page or a single-org page
-  const isDirectory = externalLinks.length >= 3 || internalLinks.length >= 5;
+  const isDirectory = externalLinks.length >= 2 || internalLinks.length >= 3;
 
   if (!isDirectory) {
     // Single org page → scrape this page directly
@@ -823,7 +830,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country, deadline 
 
   // ── Also check internal detail pages for org info or external links (parallel) ──
   // Process in batches of 10 to avoid memory pressure while still being thorough
-  const internalBatch = internalLinks.slice(0, 50);
+  const internalBatch = internalLinks.slice(0, 25);
   const externalFromSubs = [];
 
   for (let ib = 0; ib < internalBatch.length; ib += 10) {
