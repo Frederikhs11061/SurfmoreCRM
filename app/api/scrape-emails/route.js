@@ -630,7 +630,7 @@ async function scrapeOneSite(siteUrl) {
 // When the user gives us a page that LISTS many organizations (e.g. a directory),
 // we find external links on that page and scrape each one as a separate org.
 
-async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
+async function scrapeDirectoryPage(pageUrl, overrideCategory, country, deadline = Date.now() + 50000) {
   const results = [];
   const errors = [];
 
@@ -772,6 +772,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   // ── Directory mode: scrape external links in parallel batches ──
   const BATCH = 6;
   for (let i = 0; i < externalLinks.length; i += BATCH) {
+    if (Date.now() > deadline) break;
     const batch = externalLinks.slice(i, i + BATCH);
     const batchResults = await Promise.allSettled(batch.map(link => scrapeOneSite(link.url)));
     for (const result of batchResults) {
@@ -790,6 +791,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   const externalFromSubs = [];
 
   for (let ib = 0; ib < internalBatch.length; ib += 10) {
+    if (Date.now() > deadline) break;
     const chunk = internalBatch.slice(ib, ib + 10);
     const chunkHtmls = await Promise.allSettled(
       chunk.map(link => safeFetch(link.url, 8000).then(h => ({ html: h, link })))
@@ -848,6 +850,7 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
     const subExtBatch = externalFromSubs.slice(0, 50);
     const SUB_BATCH = 8;
     for (let si = 0; si < subExtBatch.length; si += SUB_BATCH) {
+      if (Date.now() > deadline) break;
       const chunk = subExtBatch.slice(si, si + SUB_BATCH);
       const subExtResults = await Promise.allSettled(chunk.map(ext => scrapeOneSite(ext.url)));
       for (let idx = 0; idx < subExtResults.length; idx++) {
@@ -890,11 +893,15 @@ async function safeFetchWithLang(url, timeoutMs = 12000, lang = 'da,en-US;q=0.9,
       cache: 'no-store',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': lang,
+        'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
         'Sec-Fetch-Dest': 'document',
         'Sec-Fetch-Mode': 'navigate',
         'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
       },
       redirect: 'follow',
@@ -968,13 +975,13 @@ export async function POST(req) {
             if (Date.now() > DEADLINE) break;
             const batch = urlsToScrape.slice(bi, bi + BATCH);
             const batchResults = await Promise.allSettled(
-              batch.map(resultUrl => scrapeDirectoryPage(resultUrl, category, country))
+              batch.map(resultUrl => scrapeDirectoryPage(resultUrl, category, country, DEADLINE))
             );
             for (const res of batchResults) {
               if (res.status !== 'fulfilled') continue;
               const { results, errors, childLinks } = res.value;
               if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
-                const childResults = await Promise.allSettled(childLinks.slice(0, 20).map(cu => scrapeDirectoryPage(cu, category, country)));
+                const childResults = await Promise.allSettled(childLinks.slice(0, 20).map(cu => scrapeDirectoryPage(cu, category, country, DEADLINE)));
                 for (const cr of childResults) {
                   if (cr.status === 'fulfilled') cr.value.results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
                 }
@@ -985,11 +992,11 @@ export async function POST(req) {
           }
         } else {
           // ── Regular URL ──
-          const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country);
+          const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country, DEADLINE);
 
           // Queue child links (e.g. from a Webshoplisten directory or harbourmaps-style listing)
           if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
-            const childResults = await Promise.allSettled(childLinks.slice(0, 60).map(cu => scrapeDirectoryPage(cu, category, country)));
+            const childResults = await Promise.allSettled(childLinks.slice(0, 60).map(cu => scrapeDirectoryPage(cu, category, country, DEADLINE)));
             for (const cr of childResults) {
               if (cr.status === 'fulfilled') cr.value.results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
             }

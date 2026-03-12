@@ -3314,22 +3314,15 @@ export default function CRMApp() {
                 )}
                 <div>
                   <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Land</label>
-                  <input
+                  <select
                     className="inp"
                     style={{ height: 38, minWidth: 140 }}
                     value={scrapeCustomCountry || scrapeCountry}
-                    onChange={e => {
-                      const v = e.target.value;
-                      if (COUNTRIES.includes(v)) { setScrapeCountry(v); setScrapeCustomCountry(''); }
-                      else { setScrapeCustomCountry(v); }
-                    }}
-                    list="smart-country-list"
-                    placeholder="f.eks. Sverige"
+                    onChange={e => { setScrapeCountry(e.target.value); setScrapeCustomCountry(''); }}
                     disabled={scrapeLoading}
-                  />
-                  <datalist id="smart-country-list">
-                    {Object.keys(DDG_LOCALE).map(c => <option key={c} value={c} />)}
-                  </datalist>
+                  >
+                    {Object.keys(DDG_LOCALE).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
                   <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Tilpassede søgeord <span style={{ color: '#4b5563' }}>(valgfrit – kommasepareret)</span></label>
@@ -3767,11 +3760,7 @@ export default function CRMApp() {
                       <select className="inp" style={{ height: 36, minWidth: 150 }} value={campaignCountry} onChange={e => setCampaignCountry(e.target.value)}>
                         <option value="Alle">Alle lande</option>
                         {[...new Set([...COUNTRIES, ...allCountries])].sort().map(c => <option key={c} value={c}>{c}</option>)}
-                        <option value="__custom__">+ Tilføj nyt land…</option>
                       </select>
-                      {campaignCountry === '__custom__' && (
-                        <input className="inp" style={{ marginTop: 4, height: 34, width: '100%' }} autoFocus placeholder="Skriv land..." onBlur={e => { if (e.target.value.trim()) setCampaignCountry(e.target.value.trim()); else setCampaignCountry('Alle'); }} onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) setCampaignCountry(e.target.value.trim()); }} />
-                      )}
                     </div>
 
                     <div>
