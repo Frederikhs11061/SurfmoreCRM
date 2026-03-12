@@ -812,6 +812,37 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   return { results, errors };
 }
 
+// ─── safeFetch variant with configurable Accept-Language ─────────────────────
+
+async function safeFetchWithLang(url, timeoutMs = 12000, lang = 'da,en-US;q=0.9,en;q=0.8') {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': lang,
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+    if (!res.ok && res.status !== 403 && res.status !== 503) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/html') && !contentType.includes('text/plain') && !contentType.includes('application/xhtml')) return null;
+    return await res.text();
+  } catch {
+    clearTimeout(timer);
+    return null;
+  }
+}
+
 // ─── Normalise URL ────────────────────────────────────────────────────────────
 
 function normaliseUrl(value) {
@@ -824,83 +855,114 @@ function normaliseUrl(value) {
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req) {
-  const { urls = [], country = '', category = '' } = await req.json();
-  const allResults = [];
-  const allErrors = [];
+  try {
+    const { urls = [], country = '', category = '' } = await req.json();
+    const allResults = [];
+    const allErrors = [];
+    const DEADLINE = Date.now() + 54000; // Stay inside Vercel's 60s limit
 
-  for (const raw of urls) {
-    const norm = normaliseUrl(raw);
-    if (!norm) continue;
+    for (const raw of urls) {
+      if (Date.now() > DEADLINE) {
+        allErrors.push({ url: raw, reason: 'time_limit_reached' });
+        break;
+      }
+      const norm = normaliseUrl(raw);
+      if (!norm) continue;
 
-    try {
-      if (isGoogleSearchUrl(norm)) {
-        // ── Google Search URL ──
-        let searchHtml = await safeFetch(norm, 15000);
-        if (!searchHtml) { allErrors.push({ url: norm, reason: 'could_not_fetch_search' }); continue; }
+      try {
+        if (isGoogleSearchUrl(norm)) {
+          // ── Google Search URL ──
+          // Use language-appropriate headers based on Google domain
+          const googleLang = norm.includes('google.se') ? 'sv,en;q=0.8'
+            : norm.includes('google.no') ? 'no,nb;q=0.9,en;q=0.7'
+            : norm.includes('google.fi') ? 'fi,en;q=0.8'
+            : norm.includes('google.de') ? 'de,en;q=0.8'
+            : 'da,en-US;q=0.9,en;q=0.8';
+          let searchHtml = await safeFetchWithLang(norm, 18000, googleLang);
+          if (!searchHtml) { allErrors.push({ url: norm, reason: 'could_not_fetch_search' }); continue; }
 
-        const resultUrls = extractGoogleResults(searchHtml);
+          const resultUrls = extractGoogleResults(searchHtml);
 
-        // Try page 2 and 3
-        const nextPages = extractLinks(searchHtml, norm, { sameHostOnly: true, maxLinks: 10 })
-          .filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 2);
+          // Try page 2 only (skip page 3 to stay within deadline)
+          const nextPages = extractLinks(searchHtml, norm, { sameHostOnly: true, maxLinks: 10 })
+            .filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 1);
 
-        for (const np of nextPages) {
-          const nHtml = await safeFetch(np.url, 12000);
-          if (nHtml) {
-            extractGoogleResults(nHtml).forEach(u => {
-              if (!resultUrls.includes(u)) resultUrls.push(u);
-            });
+          for (const np of nextPages) {
+            if (Date.now() > DEADLINE) break;
+            const nHtml = await safeFetchWithLang(np.url, 12000, googleLang);
+            if (nHtml) {
+              extractGoogleResults(nHtml).forEach(u => {
+                if (!resultUrls.includes(u)) resultUrls.push(u);
+              });
+            }
           }
-        }
 
-        // Scrape each Google result
-        for (const resultUrl of resultUrls.slice(0, 25)) {
-          try {
-            const { results, errors, childLinks } = await scrapeDirectoryPage(resultUrl, category, country);
+          // Scrape each Google result – process in small parallel batches
+          const GOOGLE_BATCH = 4;
+          const urlsToScrape = resultUrls.slice(0, 20);
+          for (let bi = 0; bi < urlsToScrape.length; bi += GOOGLE_BATCH) {
+            if (Date.now() > DEADLINE) break;
+            const batch = urlsToScrape.slice(bi, bi + GOOGLE_BATCH);
+            const batchResults = await Promise.allSettled(
+              batch.map(resultUrl => scrapeDirectoryPage(resultUrl, category, country))
+            );
+            for (const res of batchResults) {
+              if (res.status !== 'fulfilled') continue;
+              const { results, errors, childLinks } = res.value;
 
-            // Queue child links if present
-            if (childLinks && childLinks.length > 0) {
-              for (const childUrl of childLinks.slice(0, 40)) {
-                try {
-                  const { results: cResults } = await scrapeDirectoryPage(childUrl, category, country);
-                  for (const r of cResults) {
-                    if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+              // Queue child links if present
+              if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
+                const childBatch = childLinks.slice(0, 20);
+                const childResults = await Promise.allSettled(
+                  childBatch.map(cu => scrapeDirectoryPage(cu, category, country))
+                );
+                for (const cr of childResults) {
+                  if (cr.status === 'fulfilled') {
+                    for (const r of cr.value.results) {
+                      if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+                    }
                   }
-                } catch { /* ignore child errors */ }
+                }
               }
-            }
 
-            for (const r of results) {
-              if (!allResults.some(x => x.email === r.email)) allResults.push(r);
-            }
-            allErrors.push(...errors.slice(0, 2));
-          } catch { /* ignore */ }
-        }
-      } else {
-        // ── Regular URL ──
-        const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country);
-
-        // Queue child links if present (e.g. from a Webshoplisten directory)
-        if (childLinks && childLinks.length > 0) {
-          for (const childUrl of childLinks.slice(0, 80)) {
-            try {
-              const { results: cResults } = await scrapeDirectoryPage(childUrl, category, country);
-              for (const r of cResults) {
+              for (const r of results) {
                 if (!allResults.some(x => x.email === r.email)) allResults.push(r);
               }
-            } catch { /* ignore child errors */ }
+              allErrors.push(...errors.slice(0, 2));
+            }
           }
-        }
+        } else {
+          // ── Regular URL ──
+          const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country);
 
-        for (const r of results) {
-          if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+          // Queue child links if present (e.g. from a Webshoplisten directory)
+          if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
+            const childBatch = childLinks.slice(0, 60);
+            const childResults = await Promise.allSettled(
+              childBatch.map(cu => scrapeDirectoryPage(cu, category, country))
+            );
+            for (const cr of childResults) {
+              if (cr.status === 'fulfilled') {
+                for (const r of cr.value.results) {
+                  if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+                }
+              }
+            }
+          }
+
+          for (const r of results) {
+            if (!allResults.some(x => x.email === r.email)) allResults.push(r);
+          }
+          allErrors.push(...errors);
         }
-        allErrors.push(...errors);
+      } catch (e) {
+        allErrors.push({ url: norm, reason: e.message || 'unexpected_error' });
       }
-    } catch (e) {
-      allErrors.push({ url: norm, reason: e.message || 'unexpected_error' });
     }
-  }
 
-  return NextResponse.json({ leads: allResults, errors: allErrors });
+    return NextResponse.json({ leads: allResults, errors: allErrors });
+  } catch (e) {
+    // Always return valid JSON, even on unexpected top-level errors
+    return NextResponse.json({ leads: [], errors: [{ url: '', reason: e.message || 'server_error' }] });
+  }
 }
