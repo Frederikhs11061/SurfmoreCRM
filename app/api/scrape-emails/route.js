@@ -248,20 +248,55 @@ function extractLinks(html, baseUrl, options = {}) {
   return result;
 }
 
-// ─── Google search result extraction ─────────────────────────────────────────
+// ─── Search engine result extraction ─────────────────────────────────────────
+
+const SEARCH_SKIP = /google\.|duckduckgo\.|bing\.|youtube\.|wikipedia\.|facebook\.|instagram\.|twitter\.com|linkedin\.|tiktok\.|pinterest\./i;
 
 function extractGoogleResults(html) {
   const urls = [];
   const seen = new Set();
-
-  // Pattern: /url?q=https://... links (Google wraps results this way)
   const re1 = /\/url\?q=(https?:\/\/[^&"]+)/gi;
   let m;
   while ((m = re1.exec(html))) {
     try {
       const url = decodeURIComponent(m[1]);
       const parsed = new URL(url);
-      if (/google\.|youtube\.|wikipedia\.|facebook\.|instagram\.|twitter\.|linkedin\./i.test(parsed.hostname)) continue;
+      if (SEARCH_SKIP.test(parsed.hostname)) continue;
+      const key = parsed.origin + parsed.pathname;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      urls.push(parsed.toString());
+    } catch { /* ignore */ }
+  }
+  if (urls.length < 3) {
+    const re2 = /href="(https?:\/\/[^"]+)"/gi;
+    while ((m = re2.exec(html)) && urls.length < 30) {
+      try {
+        const parsed = new URL(m[1]);
+        if (SEARCH_SKIP.test(parsed.hostname)) continue;
+        const key = parsed.origin + parsed.pathname;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        urls.push(parsed.toString());
+      } catch { /* ignore */ }
+    }
+  }
+  return urls;
+}
+
+// DuckDuckGo HTML search results extractor
+function extractDuckDuckGoResults(html) {
+  const urls = [];
+  const seen = new Set();
+  let m;
+
+  // Pattern 1: DuckDuckGo redirect links  /l/?uddg=ENCODED_URL
+  const re1 = /\/l\/\?uddg=(https?[^"&\s]+)/gi;
+  while ((m = re1.exec(html))) {
+    try {
+      const url = decodeURIComponent(m[1]);
+      const parsed = new URL(url);
+      if (SEARCH_SKIP.test(parsed.hostname)) continue;
       const key = parsed.origin + parsed.pathname;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -269,13 +304,26 @@ function extractGoogleResults(html) {
     } catch { /* ignore */ }
   }
 
-  // Fallback: direct href links
+  // Pattern 2: result__a class href (direct links)
+  const re2 = /result__a[^>]*href="(https?:\/\/[^"]+)"/gi;
+  while ((m = re2.exec(html)) && urls.length < 30) {
+    try {
+      const parsed = new URL(m[1]);
+      if (SEARCH_SKIP.test(parsed.hostname)) continue;
+      const key = parsed.origin + parsed.pathname;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      urls.push(parsed.toString());
+    } catch { /* ignore */ }
+  }
+
+  // Fallback: any href
   if (urls.length < 3) {
-    const re2 = /href="(https?:\/\/[^"]+)"/gi;
-    while ((m = re2.exec(html)) && urls.length < 30) {
+    const re3 = /href="(https?:\/\/[^"]+)"/gi;
+    while ((m = re3.exec(html)) && urls.length < 30) {
       try {
         const parsed = new URL(m[1]);
-        if (/google\.|youtube\.|wikipedia\.|facebook\.|instagram\.|twitter\.|linkedin\./i.test(parsed.hostname)) continue;
+        if (SEARCH_SKIP.test(parsed.hostname)) continue;
         const key = parsed.origin + parsed.pathname;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -289,6 +337,14 @@ function extractGoogleResults(html) {
 
 function isGoogleSearchUrl(url) {
   return /google\.[a-z.]+\/search/i.test(url);
+}
+
+function isDuckDuckGoUrl(url) {
+  return /duckduckgo\.com\/(html|lite)?\??/i.test(url) || /html\.duckduckgo\.com/i.test(url);
+}
+
+function isSearchEngineUrl(url) {
+  return isGoogleSearchUrl(url) || isDuckDuckGoUrl(url);
 }
 
 // ─── Extract emails from HTML with strict validation ──────────────────────────
@@ -729,71 +785,82 @@ async function scrapeDirectoryPage(pageUrl, overrideCategory, country) {
   }
 
   // ── Also check internal detail pages for org info or external links (parallel) ──
-  const internalBatch = internalLinks.slice(0, 30);
-  const internalHtmls = await Promise.allSettled(
-    internalBatch.map(link => safeFetch(link.url, 7000).then(h => ({ html: h, link })))
-  );
-
+  // Process in batches of 10 to avoid memory pressure while still being thorough
+  const internalBatch = internalLinks.slice(0, 50);
   const externalFromSubs = [];
-  for (const res of internalHtmls) {
-    if (res.status !== 'fulfilled' || !res.value?.html) continue;
-    const { html: subHtml, link } = res.value;
 
-    const subName = extractPageName(subHtml, link.url);
-    const subEmails = extractEmailsFromHtml(subHtml);
-    const leadEmails = subEmails.filter(e => !e.endsWith('@' + pageDomain));
+  for (let ib = 0; ib < internalBatch.length; ib += 10) {
+    const chunk = internalBatch.slice(ib, ib + 10);
+    const chunkHtmls = await Promise.allSettled(
+      chunk.map(link => safeFetch(link.url, 8000).then(h => ({ html: h, link })))
+    );
 
-    if (leadEmails.length > 0) {
-      const bestEmail = leadEmails.find(e => /^(info|kontakt|mail|kontor|hej|hello|salg|post)@/i.test(e))
-        || leadEmails.find(e => !isFunctionalEmail(e))
-        || leadEmails[0];
-      if (bestEmail && !results.some(r => r.email === bestEmail)) {
-        let name = subName; if (!name || isGenericName(name)) name = '';
-        const subText = name + ' ' + stripTags(subHtml).slice(0, 3000);
-        const cat = overrideCategory || detectCategory(subText) || pageCategory;
-        results.push({
-          name,
-          email: bestEmail,
-          phone: extractPhone(subHtml),
-          city: extractCity(subHtml),
-          category: cat,
-          subcategory: detectSubcategory(subText, cat),
-          website: '',
-          sourceUrl: link.url,
-          contact_person: extractContactPerson(subHtml),
-          country: country || '',
-        });
+    for (const res of chunkHtmls) {
+      if (res.status !== 'fulfilled' || !res.value?.html) continue;
+      const { html: subHtml, link } = res.value;
+
+      const subName = extractPageName(subHtml, link.url);
+      const subEmails = extractEmailsFromHtml(subHtml);
+      const leadEmails = subEmails.filter(e => !e.endsWith('@' + pageDomain));
+
+      if (leadEmails.length > 0) {
+        const bestEmail = leadEmails.find(e => /^(info|kontakt|mail|kontor|hej|hello|salg|post)@/i.test(e))
+          || leadEmails.find(e => !isFunctionalEmail(e))
+          || leadEmails[0];
+        if (bestEmail && !results.some(r => r.email === bestEmail)) {
+          let name = subName; if (!name || isGenericName(name)) name = '';
+          const subText = name + ' ' + stripTags(subHtml).slice(0, 3000);
+          const cat = overrideCategory || detectCategory(subText) || pageCategory;
+          results.push({
+            name,
+            email: bestEmail,
+            phone: extractPhone(subHtml),
+            city: extractCity(subHtml),
+            category: cat,
+            subcategory: detectSubcategory(subText, cat),
+            website: '',
+            sourceUrl: link.url,
+            contact_person: extractContactPerson(subHtml),
+            country: country || '',
+          });
+        }
       }
-    }
 
-    // Collect external links from subpages for second-level scraping
-    // Pass the subpage name as candidateName so we can use it as fallback on the external site
-    const subExts = extractLinks(subHtml, link.url, { externalOnly: true, sameHostOnly: false, maxLinks: 5 }).slice(0, 3);
-    const candidateName = (subName && !isGenericName(subName))
-      ? subName
-      : (link.text && !isGenericName(link.text) ? link.text : '');
-    for (const ext of subExts) {
-      if (!results.some(r => r.website === new URL(ext.url).origin) && !externalFromSubs.some(e => e.url === ext.url)) {
-        externalFromSubs.push({ ...ext, candidateName });
+      // Collect external links from this subpage — these are the actual org websites
+      // (e.g. harbourmaps detail page → harbor's own website)
+      const subExts = extractLinks(subHtml, link.url, { externalOnly: true, sameHostOnly: false, maxLinks: 10 }).slice(0, 5);
+      const candidateName = (subName && !isGenericName(subName))
+        ? subName
+        : (link.text && !isGenericName(link.text) ? link.text : '');
+      for (const ext of subExts) {
+        try {
+          const origin = new URL(ext.url).origin;
+          if (!results.some(r => r.website === origin) && !externalFromSubs.some(e => e.url === ext.url)) {
+            externalFromSubs.push({ ...ext, candidateName });
+          }
+        } catch { /* ignore bad URLs */ }
       }
     }
   }
 
-  // Scrape 2nd-level external links in parallel
+  // Scrape 2nd-level external links (org own websites) — scrapeOneSite fetches contact pages too
   if (externalFromSubs.length > 0) {
-    const subExtBatch = externalFromSubs.slice(0, 30);
-    const subExtResults = await Promise.allSettled(subExtBatch.map(ext => scrapeOneSite(ext.url)));
-    for (let idx = 0; idx < subExtResults.length; idx++) {
-      const r = subExtResults[idx];
-      if (r.status === 'fulfilled' && r.value && !results.some(x => x.email && x.email === r.value.email)) {
-        const lead = r.value;
-        const ext = subExtBatch[idx];
-        // Use candidateName (from the internal subpage) as the best fallback, then link text
-        const fallbackName = ext.candidateName || (ext.text && !isGenericName(ext.text) ? ext.text : '');
-        if (fallbackName && (!lead.name || isGenericName(lead.name))) lead.name = fallbackName;
-        lead.category = overrideCategory || lead.category || pageCategory;
-        lead.country = country || '';
-        results.push(lead);
+    const subExtBatch = externalFromSubs.slice(0, 50);
+    const SUB_BATCH = 8;
+    for (let si = 0; si < subExtBatch.length; si += SUB_BATCH) {
+      const chunk = subExtBatch.slice(si, si + SUB_BATCH);
+      const subExtResults = await Promise.allSettled(chunk.map(ext => scrapeOneSite(ext.url)));
+      for (let idx = 0; idx < subExtResults.length; idx++) {
+        const r = subExtResults[idx];
+        if (r.status === 'fulfilled' && r.value && !results.some(x => x.email && x.email === r.value.email)) {
+          const lead = r.value;
+          const ext = chunk[idx];
+          const fallbackName = ext.candidateName || (ext.text && !isGenericName(ext.text) ? ext.text : '');
+          if (fallbackName && (!lead.name || isGenericName(lead.name))) lead.name = fallbackName;
+          lead.category = overrideCategory || lead.category || pageCategory;
+          lead.country = country || '';
+          results.push(lead);
+        }
       }
     }
   }
@@ -870,64 +937,49 @@ export async function POST(req) {
       if (!norm) continue;
 
       try {
-        if (isGoogleSearchUrl(norm)) {
-          // ── Google Search URL ──
-          // Use language-appropriate headers based on Google domain
-          const googleLang = norm.includes('google.se') ? 'sv,en;q=0.8'
-            : norm.includes('google.no') ? 'no,nb;q=0.9,en;q=0.7'
-            : norm.includes('google.fi') ? 'fi,en;q=0.8'
-            : norm.includes('google.de') ? 'de,en;q=0.8'
-            : 'da,en-US;q=0.9,en;q=0.8';
-          let searchHtml = await safeFetchWithLang(norm, 18000, googleLang);
+        if (isSearchEngineUrl(norm)) {
+          // ── Search engine URL (Google or DuckDuckGo) ──
+          const isDDG = isDuckDuckGoUrl(norm);
+          const lang = isDDG
+            ? (norm.includes('kl=se') ? 'sv,en;q=0.8' : norm.includes('kl=no') ? 'no,en;q=0.8' : norm.includes('kl=fi') ? 'fi,en;q=0.8' : norm.includes('kl=de') ? 'de,en;q=0.8' : 'da,en-US;q=0.9,en;q=0.8')
+            : (norm.includes('google.se') ? 'sv,en;q=0.8' : norm.includes('google.no') ? 'no,nb;q=0.9,en;q=0.7' : norm.includes('google.fi') ? 'fi,en;q=0.8' : norm.includes('google.de') ? 'de,en;q=0.8' : 'da,en-US;q=0.9,en;q=0.8');
+
+          let searchHtml = await safeFetchWithLang(norm, 20000, lang);
           if (!searchHtml) { allErrors.push({ url: norm, reason: 'could_not_fetch_search' }); continue; }
 
-          const resultUrls = extractGoogleResults(searchHtml);
+          const extractor = isDDG ? extractDuckDuckGoResults : extractGoogleResults;
+          const resultUrls = extractor(searchHtml);
 
-          // Try page 2 only (skip page 3 to stay within deadline)
-          const nextPages = extractLinks(searchHtml, norm, { sameHostOnly: true, maxLinks: 10 })
-            .filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 1);
-
-          for (const np of nextPages) {
-            if (Date.now() > DEADLINE) break;
-            const nHtml = await safeFetchWithLang(np.url, 12000, googleLang);
-            if (nHtml) {
-              extractGoogleResults(nHtml).forEach(u => {
-                if (!resultUrls.includes(u)) resultUrls.push(u);
-              });
+          // For Google: also try page 2
+          if (!isDDG) {
+            const nextPages = extractLinks(searchHtml, norm, { sameHostOnly: true, maxLinks: 10 })
+              .filter(l => /[?&]start=\d+/i.test(l.url)).slice(0, 1);
+            for (const np of nextPages) {
+              if (Date.now() > DEADLINE) break;
+              const nHtml = await safeFetchWithLang(np.url, 12000, lang);
+              if (nHtml) extractGoogleResults(nHtml).forEach(u => { if (!resultUrls.includes(u)) resultUrls.push(u); });
             }
           }
 
-          // Scrape each Google result – process in small parallel batches
-          const GOOGLE_BATCH = 4;
+          // Scrape each search result in small parallel batches
+          const BATCH = 4;
           const urlsToScrape = resultUrls.slice(0, 20);
-          for (let bi = 0; bi < urlsToScrape.length; bi += GOOGLE_BATCH) {
+          for (let bi = 0; bi < urlsToScrape.length; bi += BATCH) {
             if (Date.now() > DEADLINE) break;
-            const batch = urlsToScrape.slice(bi, bi + GOOGLE_BATCH);
+            const batch = urlsToScrape.slice(bi, bi + BATCH);
             const batchResults = await Promise.allSettled(
               batch.map(resultUrl => scrapeDirectoryPage(resultUrl, category, country))
             );
             for (const res of batchResults) {
               if (res.status !== 'fulfilled') continue;
               const { results, errors, childLinks } = res.value;
-
-              // Queue child links if present
               if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
-                const childBatch = childLinks.slice(0, 20);
-                const childResults = await Promise.allSettled(
-                  childBatch.map(cu => scrapeDirectoryPage(cu, category, country))
-                );
+                const childResults = await Promise.allSettled(childLinks.slice(0, 20).map(cu => scrapeDirectoryPage(cu, category, country)));
                 for (const cr of childResults) {
-                  if (cr.status === 'fulfilled') {
-                    for (const r of cr.value.results) {
-                      if (!allResults.some(x => x.email === r.email)) allResults.push(r);
-                    }
-                  }
+                  if (cr.status === 'fulfilled') cr.value.results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
                 }
               }
-
-              for (const r of results) {
-                if (!allResults.some(x => x.email === r.email)) allResults.push(r);
-              }
+              results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
               allErrors.push(...errors.slice(0, 2));
             }
           }
@@ -935,24 +987,15 @@ export async function POST(req) {
           // ── Regular URL ──
           const { results, errors, childLinks } = await scrapeDirectoryPage(norm, category, country);
 
-          // Queue child links if present (e.g. from a Webshoplisten directory)
+          // Queue child links (e.g. from a Webshoplisten directory or harbourmaps-style listing)
           if (childLinks && childLinks.length > 0 && Date.now() < DEADLINE) {
-            const childBatch = childLinks.slice(0, 60);
-            const childResults = await Promise.allSettled(
-              childBatch.map(cu => scrapeDirectoryPage(cu, category, country))
-            );
+            const childResults = await Promise.allSettled(childLinks.slice(0, 60).map(cu => scrapeDirectoryPage(cu, category, country)));
             for (const cr of childResults) {
-              if (cr.status === 'fulfilled') {
-                for (const r of cr.value.results) {
-                  if (!allResults.some(x => x.email === r.email)) allResults.push(r);
-                }
-              }
+              if (cr.status === 'fulfilled') cr.value.results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
             }
           }
 
-          for (const r of results) {
-            if (!allResults.some(x => x.email === r.email)) allResults.push(r);
-          }
+          results.forEach(r => { if (!allResults.some(x => x.email === r.email)) allResults.push(r); });
           allErrors.push(...errors);
         }
       } catch (e) {

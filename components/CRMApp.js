@@ -214,24 +214,30 @@ const SMART_SEARCH_TERMS = {
   },
 };
 
+// DuckDuckGo region codes (kl param) — much more reliable than Google for scraping
 const GOOGLE_DOMAIN = {
-  'Danmark': 'google.dk',
+  'Danmark': 'google.dk',    // kept for backwards-compat if user pastes Google URL manually
   'Sverige': 'google.se',
   'Norge': 'google.no',
-  'Finland': 'google.fi',
-  'Tyskland': 'google.de',
-  'UK': 'google.co.uk',
-  'USA': 'google.com',
-  'Frankrig': 'google.fr',
-  'Holland': 'google.nl',
-  'Spanien': 'google.es',
-  'Italien': 'google.it',
-  'Polen': 'google.pl',
-  'Belgien': 'google.be',
-  'Schweiz': 'google.ch',
-  'Østrig': 'google.at',
-  'Australien': 'google.com.au',
-  'Canada': 'google.ca',
+};
+const DDG_LOCALE = {
+  'Danmark': 'dk-da',
+  'Sverige': 'se-sv',
+  'Norge': 'no-no',
+  'Finland': 'fi-fi',
+  'Tyskland': 'de-de',
+  'UK': 'uk-en',
+  'USA': 'us-en',
+  'Frankrig': 'fr-fr',
+  'Holland': 'nl-nl',
+  'Spanien': 'es-es',
+  'Italien': 'it-it',
+  'Polen': 'pl-pl',
+  'Belgien': 'be-nl',
+  'Schweiz': 'ch-de',
+  'Østrig': 'at-de',
+  'Australien': 'au-en',
+  'Canada': 'ca-en',
 };
 
 // ─── CSV Parsing helpers ─────────────────────────────────────────────────────
@@ -630,7 +636,10 @@ export default function CRMApp() {
 
   // Campaign modal state
   const [campaignModal, setCampaignModal] = useState(null); // null | { tpl }
-  const [campaignCat, setCampaignCat] = useState('');
+  const [campaignCats, setCampaignCats] = useState(new Set());
+  const [campaignCatOpen, setCampaignCatOpen] = useState(false);
+  const [campaignCatSearch, setCampaignCatSearch] = useState('');
+  const [campaignCatHierOpen, setCampaignCatHierOpen] = useState(new Set());
   const [campaignCountry, setCampaignCountry] = useState('Alle');
   const [campaignStatus, setCampaignStatus] = useState('not_contacted');
 
@@ -928,11 +937,7 @@ export default function CRMApp() {
   // ─── Email Campaign helpers ───────────────────────────────────────────────────
   const getCampaignLeads = () => leads.filter(l => {
     if (!l.email || !/\S+@\S+\.\S+/.test(l.email)) return false;
-    if (campaignCat) {
-      const lcCat = (l.category || '').toLowerCase();
-      const lcFilter = campaignCat.toLowerCase();
-      if (!lcCat.startsWith(lcFilter) && !lcCat.includes('(' + lcFilter)) return false;
-    }
+    if (campaignCats.size > 0 && !campaignCats.has(l.category)) return false;
     if (campaignCountry !== 'Alle' && l.country !== campaignCountry) return false;
     if (campaignStatus !== 'Alle' && l.status !== campaignStatus) return false;
     return true;
@@ -940,9 +945,16 @@ export default function CRMApp() {
 
   const openCampaign = (tpl) => {
     // Pre-fill category from template tags if set
-    const firstTag = (tpl.category_tags || [])[0] || '';
-    const parent = firstTag.match(/^(.+?)\s*\(/) ? firstTag.match(/^(.+?)\s*\(/)[1].trim() : firstTag;
-    setCampaignCat(parent || '');
+    const preFill = new Set();
+    for (const tag of (tpl.category_tags || [])) {
+      // add matching full category strings from leads
+      const parent = tag.match(/^(.+?)\s*\(/) ? tag.match(/^(.+?)\s*\(/)[1].trim() : tag;
+      allCats.filter(c => c === tag || c.startsWith(parent + ' (') || c === parent).forEach(c => preFill.add(c));
+    }
+    setCampaignCats(preFill);
+    setCampaignCatOpen(false);
+    setCampaignCatSearch('');
+    setCampaignCatHierOpen(new Set());
     setCampaignCountry('Alle');
     setCampaignStatus('not_contacted');
     setCampaignModal({ tpl });
@@ -1103,22 +1115,22 @@ export default function CRMApp() {
   const generateSmartUrls = (autoRun = false) => {
     const effectiveCountry = scrapeCustomCountry.trim() || scrapeCountry;
     const effectiveCategory = scrapeCustomCategory.trim() || scrapeCategory;
-    const domain = GOOGLE_DOMAIN[effectiveCountry] || 'google.com';
+    const locale = DDG_LOCALE[effectiveCountry] || 'wt-wt';
     let terms;
     if (scrapeSmartKeywords.trim()) {
       terms = scrapeSmartKeywords.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
     } else if (effectiveCategory && SMART_SEARCH_TERMS[effectiveCategory]?.[effectiveCountry]) {
       terms = SMART_SEARCH_TERMS[effectiveCategory][effectiveCountry];
     } else {
-      const emailKw = ['Danmark', 'Norge', 'Sverige'].includes(effectiveCountry) ? '"e-post" OR "kontakt@"' : '"email" OR "contact@"';
+      const emailKw = ['Danmark', 'Norge', 'Sverige', 'Finland'].includes(effectiveCountry) ? '"e-post" OR "kontakt@"' : '"email" OR "contact@"';
       terms = [
-        `${effectiveCategory || 'kontakt'} ${emailKw} site:${domain.split('.').slice(1).join('.')}`,
+        `${effectiveCategory || 'kontakt'} ${emailKw} ${effectiveCountry}`,
         `${effectiveCategory} kontakt ${effectiveCountry}`,
-      ].filter(Boolean);
+      ].filter(t => t.trim());
     }
-    const urls = terms.map(t => `https://www.${domain}/search?q=${encodeURIComponent(t)}`);
+    const urls = terms.map(t => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(t)}&kl=${locale}`);
     setScrapeUrls(urls.join('\n'));
-    msg(urls.length + ' søge-URLs genereret');
+    msg(urls.length + ' søge-URLs genereret (DuckDuckGo)');
     if (autoRun) {
       setTimeout(() => runScrapeUrls(urls, effectiveCountry, effectiveCategory), 80);
     }
@@ -3316,7 +3328,7 @@ export default function CRMApp() {
                     disabled={scrapeLoading}
                   />
                   <datalist id="smart-country-list">
-                    {Object.keys(GOOGLE_DOMAIN).map(c => <option key={c} value={c} />)}
+                    {Object.keys(DDG_LOCALE).map(c => <option key={c} value={c} />)}
                   </datalist>
                 </div>
                 <div style={{ flex: 1, minWidth: 200 }}>
@@ -3657,10 +3669,7 @@ export default function CRMApp() {
       {campaignModal && (() => {
         const { tpl } = campaignModal;
         const recipients = getCampaignLeads();
-        const catOptions = [...new Set(leads.map(l => {
-          const m = (l.category || '').match(/^(.+?)\s*\(/);
-          return m ? m[1].trim() : (l.category || '');
-        }).filter(Boolean))].sort();
+        // reuse the same catHierarchy from main leads view
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: 20 }}
             onClick={e => { if (e.target === e.currentTarget) setCampaignModal(null); }}>
@@ -3689,20 +3698,82 @@ export default function CRMApp() {
                 <div style={{ padding: '14px 22px', borderBottom: '1px solid #1f2937' }}>
                   <div style={{ fontSize: 11, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>Filtrer modtagere</div>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+
+                    {/* ── Hierarkisk kategori dropdown (same as leads view) ── */}
                     <div>
                       <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Kategori</label>
-                      <select className="inp" style={{ height: 36, minWidth: 180 }} value={campaignCat} onChange={e => setCampaignCat(e.target.value)}>
-                        <option value="">Alle kategorier</option>
-                        {catOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
+                      <div style={{ position: 'relative' }}>
+                        <button className="btn btn-g" style={{ height: 36, minWidth: 190, textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0 10px' }}
+                          onClick={() => { setCampaignCatOpen(o => !o); setCampaignCatSearch(''); }}>
+                          <span style={{ fontSize: 13 }}>{campaignCats.size === 0 ? 'Alle kategorier' : `${campaignCats.size} valgt`}</span>
+                          <span style={{ fontSize: 10 }}>{campaignCatOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {campaignCatOpen && (
+                          <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 400, background: '#111827', border: '1px solid #1f2937', borderRadius: 10, minWidth: 280, maxHeight: 380, display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,0.7)' }}>
+                            <div style={{ padding: '8px 10px', borderBottom: '1px solid #1f2937', display: 'flex', gap: 6, flexShrink: 0 }}>
+                              <input className="inp" style={{ flex: 1, padding: '5px 9px', fontSize: 12 }} placeholder="Søg kategori..." value={campaignCatSearch} onChange={e => setCampaignCatSearch(e.target.value)} autoFocus />
+                              <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => { setCampaignCats(new Set()); setCampaignCatSearch(''); }}>Ryd</button>
+                              <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 8px' }} onClick={() => setCampaignCatOpen(false)}>Luk</button>
+                            </div>
+                            <div style={{ overflowY: 'auto', padding: '4px 0' }}>
+                              {catHierarchy.filter(p => !campaignCatSearch || p.name.toLowerCase().includes(campaignCatSearch.toLowerCase()) || p.subs.some(s => s.toLowerCase().includes(campaignCatSearch.toLowerCase()))).map(parent => {
+                                const subSel = parent.subs.filter(s => campaignCats.has(s)).length;
+                                const allSubSel = parent.subs.length > 0 && parent.subs.every(s => campaignCats.has(s));
+                                const parentSel = campaignCats.has(parent.name);
+                                const isSel = parent.subs.length === 0 ? parentSel : (subSel > 0 || parentSel);
+                                const hierExp = campaignCatHierOpen.has(parent.name);
+                                const toggleParent = () => {
+                                  const n = new Set(campaignCats);
+                                  if (parent.subs.length === 0) { parentSel ? n.delete(parent.name) : n.add(parent.name); }
+                                  else { if (allSubSel) { parent.subs.forEach(s => n.delete(s)); n.delete(parent.name); } else { parent.subs.forEach(s => n.add(s)); n.add(parent.name); } }
+                                  setCampaignCats(n);
+                                };
+                                return (
+                                  <div key={parent.name}>
+                                    <div style={{ display: 'flex', alignItems: 'center', padding: '7px 12px', cursor: 'pointer', background: isSel ? '#0ea5e910' : 'transparent', gap: 6 }}
+                                      onClick={parent.subs.length === 0 ? toggleParent : () => { const n = new Set(campaignCatHierOpen); n.has(parent.name) ? n.delete(parent.name) : n.add(parent.name); setCampaignCatHierOpen(n); }}>
+                                      <div style={{ width: 14, height: 14, borderRadius: 3, border: '1px solid ' + (isSel ? '#0ea5e9' : '#374151'), background: isSel ? '#0ea5e9' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                        onClick={e => { e.stopPropagation(); toggleParent(); }}>
+                                        {isSel && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                                      </div>
+                                      <span style={{ fontSize: 13, fontWeight: 600, flex: 1, color: isSel ? '#e2e8f0' : '#9ca3af' }}>{parent.name}</span>
+                                      {parent.subs.length > 0 && <span style={{ fontSize: 10, color: '#4b5563' }}>{subSel > 0 ? `${subSel}/${parent.subs.length}` : ''} {hierExp ? '▲' : '▼'}</span>}
+                                    </div>
+                                    {parent.subs.length > 0 && hierExp && parent.subs.map(sub => {
+                                      const subLabel = sub.replace(parent.name, '').replace(/^\s*\(|\)\s*$/g, '').trim();
+                                      const sel = campaignCats.has(sub);
+                                      return (
+                                        <div key={sub} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px 5px 32px', cursor: 'pointer', background: sel ? '#0ea5e908' : 'transparent' }}
+                                          onClick={() => { const n = new Set(campaignCats); sel ? n.delete(sub) : n.add(sub); setCampaignCats(n); }}>
+                                          <div style={{ width: 12, height: 12, borderRadius: 2, border: '1px solid ' + (sel ? '#0ea5e9' : '#374151'), background: sel ? '#0ea5e9' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {sel && <span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span>}
+                                          </div>
+                                          <span style={{ fontSize: 12, color: sel ? '#e2e8f0' : '#6b7280' }}>{subLabel}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
+
+                    {/* ── Land: alle lande fra leads + fri tekst ── */}
                     <div>
                       <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Land</label>
-                      <select className="inp" style={{ height: 36, minWidth: 140 }} value={campaignCountry} onChange={e => setCampaignCountry(e.target.value)}>
+                      <select className="inp" style={{ height: 36, minWidth: 150 }} value={campaignCountry} onChange={e => setCampaignCountry(e.target.value)}>
                         <option value="Alle">Alle lande</option>
                         {[...new Set([...COUNTRIES, ...allCountries])].sort().map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value="__custom__">+ Tilføj nyt land…</option>
                       </select>
+                      {campaignCountry === '__custom__' && (
+                        <input className="inp" style={{ marginTop: 4, height: 34, width: '100%' }} autoFocus placeholder="Skriv land..." onBlur={e => { if (e.target.value.trim()) setCampaignCountry(e.target.value.trim()); else setCampaignCountry('Alle'); }} onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) setCampaignCountry(e.target.value.trim()); }} />
+                      )}
                     </div>
+
                     <div>
                       <label style={{ fontSize: 11, color: '#9ca3af', display: 'block', marginBottom: 4 }}>Status</label>
                       <select className="inp" style={{ height: 36, minWidth: 170 }} value={campaignStatus} onChange={e => setCampaignStatus(e.target.value)}>
