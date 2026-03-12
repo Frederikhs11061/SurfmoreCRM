@@ -27,19 +27,19 @@ const DEFAULT_OTR = { date: '', by: 'Jeppe', note: '', sale_info: '' };
 const SMART_SEARCH_TERMS = {
   'Havne': {
     'Danmark': [
-      'gæstehavn "e-mail" OR "kontakt@" site:dk',
+      'gæstehavn "e-mail" OR "kontakt@"',
       'lystbådehavn kontakt "e-mail"',
       'marina sejlklub havnekontor "e-mail"',
       'liste gæstehavne kontaktoplysninger',
     ],
     'Sverige': [
-      'gästhamn "e-post" OR "kontakt@" site:se',
+      'gästhamn "e-post" OR "kontakt@"',
       'båthamn kontakt "e-post" OR "mailto"',
       'marina hamn "e-post" sverige',
       'lista gästhamnar kontakt e-post',
     ],
     'Norge': [
-      'gjestehavn "e-post" OR "kontakt@" site:no',
+      'gjestehavn "e-post" OR "kontakt@"',
       'lystbåthavn kontakt "e-post"',
       'marina havn "e-post" norge',
       'liste gjestehavner kontakt',
@@ -47,169 +47,169 @@ const SMART_SEARCH_TERMS = {
   },
   'Kajakklubber': {
     'Danmark': [
-      'kajakklub "e-mail" OR "kontakt@" site:dk',
+      'kajakklub "e-mail" OR "kontakt@"',
       'kanoklub kontakt "e-mail" OR "mailto"',
       'kajakforening bestyrelse e-mail',
     ],
     'Sverige': [
-      'kajakklubbar "e-post" OR "kontakt@" site:se',
+      'kajakklubbar "e-post" OR "kontakt@"',
       'paddlingsklubb kontakt "e-post"',
       'kanotförbundet klubbar e-post',
     ],
     'Norge': [
-      'kajakklubb "e-post" OR "kontakt@" site:no',
+      'kajakklubb "e-post" OR "kontakt@"',
       'padleklubb kontakt "e-post"',
       'norges padleforbund klubber epost',
     ],
   },
   'Skateparks': {
     'Danmark': [
-      'skatepark "e-mail" OR "kontakt@" site:dk',
+      'skatepark "e-mail" OR "kontakt@"',
       'skatebane kontakt e-mail',
     ],
     'Sverige': [
-      'skatepark "e-post" OR "kontakt@" site:se',
+      'skatepark "e-post" OR "kontakt@"',
       'skatehall kontakt e-post',
     ],
     'Norge': [
-      'skatepark "e-post" OR "kontakt@" site:no',
+      'skatepark "e-post" OR "kontakt@"',
       'skateanlegg kontakt epost',
     ],
   },
   'Spejdergrupper': {
     'Danmark': [
-      'spejdergruppe "e-mail" OR "kontakt@" site:dk',
+      'spejdergruppe "e-mail" OR "kontakt@"',
       'FDF KFUM spejdere kontakt e-mail',
       'spejderkorps bestyrelse e-mail',
     ],
     'Sverige': [
-      'scoutkår "e-post" OR "kontakt@" site:se',
+      'scoutkår "e-post" OR "kontakt@"',
       'scoutgrupp kontakt e-post',
       'scoutförbundet kårer e-post',
     ],
     'Norge': [
-      'speidergruppe "e-post" OR "kontakt@" site:no',
+      'speidergruppe "e-post" OR "kontakt@"',
       'norges speiderforbund gruppe epost',
     ],
   },
   'Butik & Webshop': {
     'Danmark': [
-      'surfshop kiteshop "e-mail" OR "kontakt@" site:dk',
+      'surfshop kiteshop "e-mail" OR "kontakt@"',
       'outdoor sport butik "e-mail" OR "mailto"',
       'windsurfing kitesurf forhandler e-mail',
     ],
     'Sverige': [
-      'surfshop kiteshop "e-post" OR "kontakt@" site:se',
+      'surfshop kiteshop "e-post" OR "kontakt@"',
       'outdoor sport butik "e-post" OR "mailto" sverige',
     ],
     'Norge': [
-      'surfshop kiteshop "e-post" OR "kontakt@" site:no',
+      'surfshop kiteshop "e-post" OR "kontakt@"',
       'outdoor sport butikk epost norge',
     ],
   },
   'Skoler & klubber': {
     'Danmark': [
-      'surfskole kiteskole "e-mail" OR "kontakt@" site:dk',
+      'surfskole kiteskole "e-mail" OR "kontakt@"',
       'vandsportsskole SUP wakeboard kontakt e-mail',
     ],
     'Sverige': [
-      'surfskola kiteskola "e-post" OR "kontakt@" site:se',
+      'surfskola kiteskola "e-post" OR "kontakt@"',
       'vattensportskola SUP kontakt e-post',
     ],
     'Norge': [
-      'surfskole kiteskole "e-post" OR "kontakt@" site:no',
+      'surfskole kiteskole "e-post" OR "kontakt@"',
       'vannsportskole SUP kontakt epost',
     ],
   },
   'Folkeskoler': {
     'Danmark': [
-      'folkeskole "e-mail" OR "kontakt@" site:dk',
+      'folkeskole "e-mail" OR "kontakt@"',
       'friskole privatskole kontakt e-mail',
     ],
     'Sverige': [
-      'grundskola "e-post" OR "kontakt@" site:se',
+      'grundskola "e-post" OR "kontakt@"',
       'friskola kontakt e-post',
     ],
     'Norge': [
-      'barneskole ungdomsskole "e-post" OR "kontakt@" site:no',
+      'barneskole ungdomsskole "e-post" OR "kontakt@"',
     ],
   },
   'Børnehaver': {
     'Danmark': [
-      'børnehave vuggestue "e-mail" OR "kontakt@" site:dk',
+      'børnehave vuggestue "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'förskola "e-post" OR "kontakt@" site:se',
+      'förskola "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'barnehage "e-post" OR "kontakt@" site:no',
+      'barnehage "e-post" OR "kontakt@"',
     ],
   },
   'Efterskoler': {
     'Danmark': [
-      'efterskole sport friluft "e-mail" OR "kontakt@" site:dk',
+      'efterskole sport friluft "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'folkhögskola sport "e-post" OR "kontakt@" site:se',
+      'folkhögskola sport "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'folkehøgskole sport "e-post" OR "kontakt@" site:no',
+      'folkehøgskole sport "e-post" OR "kontakt@"',
     ],
   },
   'Gymnasium': {
     'Danmark': [
-      'gymnasium HTX HHX STX "e-mail" OR "kontakt@" site:dk',
+      'gymnasium HTX HHX STX "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'gymnasium sport "e-post" OR "kontakt@" site:se',
+      'gymnasium sport "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'videregående skole "e-post" OR "kontakt@" site:no',
+      'videregående skole "e-post" OR "kontakt@"',
     ],
   },
   'Højskoler': {
     'Danmark': [
-      'højskole friluft "e-mail" OR "kontakt@" site:dk',
+      'højskole friluft "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'folkhögskola "e-post" OR "kontakt@" site:se',
+      'folkhögskola "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'folkehøgskole "e-post" OR "kontakt@" site:no',
+      'folkehøgskole "e-post" OR "kontakt@"',
     ],
   },
   'Naturskoler, centre & vejledere': {
     'Danmark': [
-      'naturskole naturvejleder "e-mail" OR "kontakt@" site:dk',
+      'naturskole naturvejleder "e-mail" OR "kontakt@"',
       'friluftscentrum outdoor center e-mail',
     ],
     'Sverige': [
-      'naturskola friluftsgård "e-post" OR "kontakt@" site:se',
+      'naturskola friluftsgård "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'naturskole friluftssenter "e-post" OR "kontakt@" site:no',
+      'naturskole friluftssenter "e-post" OR "kontakt@"',
     ],
   },
   'Drager & Legetøj': {
     'Danmark': [
-      'dragebutik legetøj outdoor "e-mail" OR "kontakt@" site:dk',
+      'dragebutik legetøj outdoor "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'drakar leksaker outdoor "e-post" OR "kontakt@" site:se',
+      'drakar leksaker outdoor "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'drage leker outdoor "e-post" OR "kontakt@" site:no',
+      'drage leker outdoor "e-post" OR "kontakt@"',
     ],
   },
   'Indkøbsforeninger': {
     'Danmark': [
-      'indkøbsforening "e-mail" OR "kontakt@" site:dk',
+      'indkøbsforening "e-mail" OR "kontakt@"',
     ],
     'Sverige': [
-      'inköpsförening "e-post" OR "kontakt@" site:se',
+      'inköpsförening "e-post" OR "kontakt@"',
     ],
     'Norge': [
-      'innkjøpsforening "e-post" OR "kontakt@" site:no',
+      'innkjøpsforening "e-post" OR "kontakt@"',
     ],
   },
 };
@@ -3454,6 +3454,15 @@ export default function CRMApp() {
                     <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 8 }}>Rediger kategori direkte i tabellen</span>
                   )}
                 </div>
+                <button
+                  className="btn btn-d"
+                  onClick={() => setScrapeRows(prev => prev.map(r => ({ ...r, city: '' })))}
+                  disabled={!scrapeRows.length}
+                  style={{ height: 36, fontSize: 12 }}
+                  title="Slet By-feltet på alle rækker"
+                >
+                  Ryd By
+                </button>
                 <button className="btn btn-g" onClick={copyScrapeTable} disabled={!scrapeRows.length} style={{ height: 36, fontSize: 12 }}>📋 Kopier (TSV)</button>
                 <button className="btn btn-p" onClick={sendScrapeToImport} disabled={!scrapeRows.length} style={{ height: 36, fontSize: 12, fontWeight: 700 }}>➡ Send {scrapeRows.length || 0} til import</button>
               </div>
@@ -3485,7 +3494,18 @@ export default function CRMApp() {
                       >
                         {/* Navn */}
                         <td style={{ padding: '7px 10px', fontWeight: 600, maxWidth: 180, minWidth: 100 }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#e2e8f0' }} title={r.name}>{r.name || '—'}</div>
+                          <input
+                            value={r.name || ''}
+                            placeholder="—"
+                            onChange={e => updateScrapeRow(i, 'name', e.target.value)}
+                            style={{
+                              width: '100%', background: 'transparent', border: '1px solid transparent',
+                              borderRadius: 3, color: '#e2e8f0', padding: '3px 5px', fontSize: 12,
+                              outline: 'none', fontFamily: 'inherit', fontWeight: 600
+                            }}
+                            onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'transparent'}
+                          />
                         </td>
                         {/* Kategori – inline editable dropdown */}
                         <td style={{ padding: '5px 8px', minWidth: 150 }}>
@@ -3500,19 +3520,48 @@ export default function CRMApp() {
                         </td>
                         {/* Email */}
                         <td style={{ padding: '7px 10px', minWidth: 160 }}>
-                          <a
-                            href={'mailto:' + r.email}
-                            style={{ color: '#38bdf8', textDecoration: 'none', fontFamily: 'monospace', fontSize: 11 }}
-                            title={r.email}
-                          >
-                            {r.email}
-                          </a>
+                          <input
+                            value={r.email || ''}
+                            placeholder="—"
+                            onChange={e => updateScrapeRow(i, 'email', e.target.value)}
+                            style={{
+                              width: '100%', background: 'transparent', border: '1px solid transparent',
+                              borderRadius: 3, color: '#38bdf8', padding: '3px 5px', fontSize: 12,
+                              outline: 'none', fontFamily: 'monospace'
+                            }}
+                            onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'transparent'}
+                          />
                         </td>
                         {/* Tlf */}
-                        <td style={{ padding: '7px 10px', color: '#9ca3af', whiteSpace: 'nowrap', minWidth: 90 }}>{r.phone || <span style={{ color: '#374151' }}>—</span>}</td>
+                        <td style={{ padding: '7px 10px', color: '#9ca3af', whiteSpace: 'nowrap', minWidth: 90 }}>
+                          <input
+                            value={r.phone || ''}
+                            placeholder="—"
+                            onChange={e => updateScrapeRow(i, 'phone', e.target.value)}
+                            style={{
+                              width: '100%', background: 'transparent', border: '1px solid transparent',
+                              borderRadius: 3, color: '#e2e8f0', padding: '3px 5px', fontSize: 12,
+                              outline: 'none', fontFamily: 'inherit'
+                            }}
+                            onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'transparent'}
+                          />
+                        </td>
                         {/* By */}
                         <td style={{ padding: '7px 10px', color: '#9ca3af', minWidth: 80 }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.city}>{r.city || <span style={{ color: '#374151' }}>—</span>}</div>
+                          <input
+                            value={r.city || ''}
+                            placeholder="—"
+                            onChange={e => updateScrapeRow(i, 'city', e.target.value)}
+                            style={{
+                              width: '100%', background: 'transparent', border: '1px solid transparent',
+                              borderRadius: 3, color: '#e2e8f0', padding: '3px 5px', fontSize: 12,
+                              outline: 'none', fontFamily: 'inherit'
+                            }}
+                            onFocus={e => e.currentTarget.style.borderColor = '#3b82f6'}
+                            onBlur={e => e.currentTarget.style.borderColor = 'transparent'}
+                          />
                         </td>
                         {/* Website */}
                         <td style={{ padding: '7px 10px', minWidth: 110 }}>
