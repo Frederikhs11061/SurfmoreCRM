@@ -996,48 +996,96 @@ export async function POST(req) {
         return extractDuckDuckGoResults(html).slice(0, topN);
       };
 
+      // Bing as fallback search engine (separate rate limits from DDG)
+      const bingSearch = async (query, topN = 3) => {
+        const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=${lang.split(',')[0].split('-')[0] || 'da'}`;
+        const html = await safeFetchWithLang(bingUrl, 15000, lang);
+        if (!html) return [];
+        const urls = []; const seen = new Set();
+        const re = /<h2[^>]*>\s*<a[^>]+href="(https?:\/\/[^"?#]+)/gi;
+        let m;
+        while ((m = re.exec(html)) && urls.length < topN) {
+          try {
+            const parsed = new URL(m[1]);
+            if (SEARCH_SKIP.test(parsed.hostname)) continue;
+            const key = parsed.origin + parsed.pathname;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            urls.push(parsed.toString());
+          } catch { /* ignore */ }
+        }
+        return urls;
+      };
+
       const NBATCH = 6;
       for (let ni = 0; ni < names.length; ni += NBATCH) {
         if (Date.now() > DEADLINE) break;
         const batch = names.slice(ni, ni + NBATCH);
         const batchResults = await Promise.allSettled(batch.map(async (name) => {
-          // Strategy 1: search for name alone
+          // Strategy 1: DDG with locale
           let resultUrls = await ddgSearch(name, 3);
-          // Strategy 2: worldwide fallback if locale returns nothing
+          // Strategy 2: DDG worldwide
           if (resultUrls.length === 0) {
             const fHtml = await safeFetchWithLang(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(name)}&kl=wt-wt`, 12000, lang);
             if (fHtml) resultUrls = extractDuckDuckGoResults(fHtml).slice(0, 3);
           }
-          // Strategy 3: name + "kontakt" for more targeted URL if still nothing
-          if (resultUrls.length === 0) {
-            const fHtml = await safeFetchWithLang(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(name + ' kontakt')}&kl=${locale}`, 12000, lang);
-            if (fHtml) resultUrls = extractDuckDuckGoResults(fHtml).slice(0, 3);
-          }
+          // Strategy 3: Bing (completely different engine — different rate limits)
+          if (resultUrls.length === 0) resultUrls = await bingSearch(name, 3);
+          // Strategy 4: Bing + "kontakt"
+          if (resultUrls.length === 0) resultUrls = await bingSearch(name + ' kontakt', 3);
 
-          const perSiteDeadline = Math.min(Date.now() + 12000, DEADLINE);
+          const perSiteDeadline = Math.min(Date.now() + 18000, DEADLINE);
 
           for (const siteUrl of resultUrls) {
-            // First try: fast single-page scrape
-            let lead = await scrapeOneSite(siteUrl);
-            if (lead && lead.email) {
-              lead.category = category || lead.category;
-              lead.country  = country  || '';
-              if (!lead.name || isGenericName(lead.name)) lead.name = name;
-              return lead;
+            // Phase 1: single-page scrape (checks front page + /kontakt etc.)
+            const lead1 = await scrapeOneSite(siteUrl);
+            if (lead1 && lead1.email) {
+              lead1.category = category || lead1.category;
+              lead1.country  = country  || '';
+              if (!lead1.name || isGenericName(lead1.name)) lead1.name = name;
+              return lead1;
             }
-            // Second try: follow sublinks (e.g. location pages on a chain site)
-            if (Date.now() < perSiteDeadline) {
-              try {
-                const { results } = await scrapeDirectoryPage(siteUrl, category, country, perSiteDeadline);
-                const best = results.find(r => r.email) || null;
-                if (best) {
-                  best.category = category || best.category;
-                  best.country  = country  || '';
-                  if (!best.name || isGenericName(best.name)) best.name = name;
-                  return best;
+
+            if (Date.now() >= perSiteDeadline) continue;
+
+            // Phase 2: name-keyword subpage search
+            // e.g. "FitnessX Viborg" → find links with "viborg" on fitnessx.dk
+            try {
+              const mainHtml = await safeFetch(siteUrl, 8000);
+              if (mainHtml) {
+                const nameWords = name.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+                if (nameWords.length > 0) {
+                  const allLinks = extractLinks(mainHtml, siteUrl, { sameHostOnly: true, maxLinks: 120 });
+                  const specificLinks = allLinks.filter(l =>
+                    nameWords.some(w => l.url.toLowerCase().includes(w) || l.text.toLowerCase().includes(w))
+                  ).slice(0, 6);
+                  for (const link of specificLinks) {
+                    if (Date.now() > perSiteDeadline) break;
+                    const subLead = await scrapeOneSite(link.url);
+                    if (subLead && subLead.email) {
+                      subLead.category = category || subLead.category;
+                      subLead.country  = country  || '';
+                      if (!subLead.name || isGenericName(subLead.name)) subLead.name = name;
+                      return subLead;
+                    }
+                  }
                 }
-              } catch { /* ignore */ }
-            }
+              }
+            } catch { /* ignore */ }
+
+            if (Date.now() >= perSiteDeadline) continue;
+
+            // Phase 3: full directory traversal as last resort
+            try {
+              const { results } = await scrapeDirectoryPage(siteUrl, category, country, perSiteDeadline);
+              const best = results.find(r => r.email) || null;
+              if (best) {
+                best.category = category || best.category;
+                best.country  = country  || '';
+                if (!best.name || isGenericName(best.name)) best.name = name;
+                return best;
+              }
+            } catch { /* ignore */ }
           }
           return null;
         }));

@@ -616,6 +616,7 @@ export default function CRMApp() {
   const [newUserModal, setNewUserModal] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserName, setNewUserName] = useState('');
   const [newUserError, setNewUserError] = useState('');
   const [newUserLoading, setNewUserLoading] = useState(false);
   const [newUserSuccess, setNewUserSuccess] = useState('');
@@ -1181,7 +1182,7 @@ export default function CRMApp() {
       const res = await fetch('/api/create-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: newUserEmail.trim(), password: newUserPassword }),
+        body: JSON.stringify({ email: newUserEmail.trim(), password: newUserPassword, name: newUserName.trim() }),
       });
       const data = await res.json();
       if (!res.ok) { setNewUserError(data.error || 'Ukendt fejl'); }
@@ -1189,6 +1190,7 @@ export default function CRMApp() {
         setNewUserSuccess('Bruger oprettet! ' + newUserEmail.trim() + ' kan nu logge ind.');
         setNewUserEmail('');
         setNewUserPassword('');
+        setNewUserName('');
       }
     } catch (e) { setNewUserError(e.message || 'Ukendt fejl'); }
     setNewUserLoading(false);
@@ -2281,6 +2283,10 @@ export default function CRMApp() {
               )}
               <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 8, letterSpacing: 0.3 }}>NAVN</label>
+                  <input className="login-input" type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="Jeppe Hansen" required />
+                </div>
+                <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'block', marginBottom: 8, letterSpacing: 0.3 }}>EMAIL</label>
                   <input className="login-input" type="email" value={newUserEmail} onChange={e => setNewUserEmail(e.target.value)} placeholder="bruger@surfmore.dk" required />
                 </div>
@@ -2289,7 +2295,7 @@ export default function CRMApp() {
                   <input className="login-input" type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Minimum 6 tegn" required minLength={6} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <button type="button" onClick={() => { setNewUserModal(false); setNewUserError(''); setNewUserSuccess(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#94a3b8', fontSize: 14, fontWeight: 600, padding: '12px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>Annuller</button>
+                  <button type="button" onClick={() => { setNewUserModal(false); setNewUserError(''); setNewUserSuccess(''); setNewUserName(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, color: '#94a3b8', fontSize: 14, fontWeight: 600, padding: '12px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s' }}>Annuller</button>
                   <button type="submit" disabled={newUserLoading || !newUserEmail || !newUserPassword} className="login-btn" style={{ flex: 1 }}>{newUserLoading ? 'Opretter…' : 'Opret bruger'}</button>
                 </div>
               </form>

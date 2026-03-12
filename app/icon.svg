@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0ea5e9"/>
+      <stop offset="100%" style="stop-color:#4f46e5"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#bg)"/>
+  <!-- Wave shape -->
+  <path d="M4 20 Q8 14 12 20 Q16 26 20 20 Q24 14 28 20" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M4 24 Q8 18 12 24 Q16 30 20 24 Q24 18 28 24" stroke="rgba(255,255,255,0.5)" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- Board / surfboard dot -->
+  <circle cx="16" cy="11" r="3" fill="white" opacity="0.9"/>
+</svg>

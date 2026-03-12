@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
-  const { email, password } = await req.json();
+  const { email, password, name } = await req.json();
   if (!email || !password) {
     return NextResponse.json({ error: 'Email og adgangskode er påkrævet' }, { status: 400 });
   }
@@ -16,6 +16,7 @@ export async function POST(req) {
     email,
     password,
     email_confirm: true,
+    user_metadata: { full_name: name || '' },
   });
 
   if (error) {
