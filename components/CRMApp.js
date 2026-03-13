@@ -726,6 +726,7 @@ export default function CRMApp() {
   const [deleteAllStep, setDeleteAllStep] = useState(0);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
   const [dupModal, setDupModal] = useState(null);
+  const [inFileDupModal, setInFileDupModal] = useState(null);
   const [previewTpl, setPreviewTpl] = useState(null);
 
   // ── Auth session ────────────────────────────────────────────────────────
@@ -1998,8 +1999,28 @@ export default function CRMApp() {
   const ENRICH_FIELDS = ['category', 'country', 'phone', 'city', 'website', 'contact_person'];
   const ENRICH_LABELS = { category: 'kategori', country: 'land', phone: 'telefon', city: 'by', website: 'website', contact_person: 'kontakt' };
 
-  const checkAndImport = async () => {
-    if (!iPrev.length) return;
+  const detectInFileDups = (leadsArr) => {
+    const seenEmails = new Map();
+    const seenNames = new Map();
+    const unique = [];
+    const dups = [];
+    for (const l of leadsArr) {
+      const emailKey = l.email ? l.email.toLowerCase().trim() : null;
+      const nameKey = (l.name || '').toLowerCase().trim();
+      if (emailKey && seenEmails.has(emailKey)) {
+        dups.push({ ...l, _dupOf: seenEmails.get(emailKey), _matchedBy: 'email' });
+      } else if (!emailKey && nameKey && seenNames.has(nameKey)) {
+        dups.push({ ...l, _dupOf: seenNames.get(nameKey), _matchedBy: 'navn' });
+      } else {
+        unique.push(l);
+        if (emailKey) seenEmails.set(emailKey, l);
+        else if (nameKey) seenNames.set(nameKey, l);
+      }
+    }
+    return { unique, dups };
+  };
+
+  const runDbDupCheck = async (leadsArr) => {
     const emailMap = new Map();
     const nameMap = new Map();
     for (const l of leads) {
@@ -2008,7 +2029,7 @@ export default function CRMApp() {
     }
     const duplicates = [];
     const nonDuplicates = [];
-    for (const l of iPrev) {
+    for (const l of leadsArr) {
       const emailMatch = l.email && emailMap.has(l.email.toLowerCase().trim());
       const nameMatch = !l.email && nameMap.has((l.name || '').toLowerCase().trim());
       if (emailMatch || nameMatch) {
@@ -2024,10 +2045,20 @@ export default function CRMApp() {
     }
     const enrichable = duplicates.filter(d => Object.keys(d._newFields).length > 0);
     if (duplicates.length === 0) {
-      await importLeads(iPrev);
+      await importLeads(leadsArr);
     } else {
       setDupModal({ duplicates, nonDuplicates, enrichable });
     }
+  };
+
+  const checkAndImport = async () => {
+    if (!iPrev.length) return;
+    const { unique, dups } = detectInFileDups(iPrev);
+    if (dups.length > 0) {
+      setInFileDupModal({ unique, dups });
+      return;
+    }
+    await runDbDupCheck(iPrev);
   };
 
   const connectShopify = async () => {
@@ -3088,6 +3119,11 @@ export default function CRMApp() {
               </div>
               {iPrev.length > 0 && (
                 <div>
+                  {(() => { const { dups: _fDups } = detectInFileDups(iPrev); return _fDups.length > 0 ? (
+                    <div style={{ fontSize: 12, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 12px', marginBottom: 8 }}>
+                      ⚠ {_fDups.length} dublet{_fDups.length !== 1 ? 'ter' : ''} fundet i filen – du vil blive spurgt ved import.
+                    </div>
+                  ) : null; })()}
                   <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 10, display: 'flex', gap: 16 }}>
                     <span>Preview: <strong style={{ color: '#e2e8f0' }}>{iPrev.length}</strong> leads</span>
                     <span style={{ color: '#22c55e' }}>Solgt: {iPrev.filter(l => l.status === 'won').length}</span>
@@ -4375,6 +4411,50 @@ export default function CRMApp() {
               <button className="btn btn-g" style={{ fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(previewTpl.subject || ''); msg('Emne kopieret'); }}>Kopiér emne</button>
               <button className="btn btn-p" style={{ fontSize: 12 }} onClick={() => { const t = previewTpl; setPreviewTpl(null); openEditTemplate(t); }}>Rediger</button>
               <button className="btn btn-g" style={{ fontSize: 12, marginLeft: 'auto' }} onClick={() => setPreviewTpl(null)}>Luk</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Dubletter i filen */}
+      {inFileDupModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+          <div style={{ ...CC.card, padding: 24, maxWidth: 600, width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
+              {inFileDupModal.dups.length} dublet{inFileDupModal.dups.length !== 1 ? 'ter' : ''} fundet i filen
+            </div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 14 }}>
+              Disse leads optræder mere end én gang i din fil (matchet på {inFileDupModal.dups.some(d => d._matchedBy === 'email') ? 'email' : 'navn'}).
+              Vil du fjerne dem og kun beholde den første forekomst?
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16, border: '1px solid #1f2937', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#080d18', position: 'sticky', top: 0 }}>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Duplikeret lead</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Første forekomst</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>Match</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inFileDupModal.dups.map((d, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #0d1420', background: i % 2 ? '#ffffff03' : 'transparent' }}>
+                      <td style={{ padding: '6px 10px', fontWeight: 600, color: '#f87171' }}>{d.name}<br /><span style={{ color: '#38bdf8', fontWeight: 400 }}>{d.email || '—'}</span></td>
+                      <td style={{ padding: '6px 10px', color: '#9ca3af' }}>{d._dupOf?.name}<br /><span style={{ color: '#38bdf8' }}>{d._dupOf?.email || '—'}</span></td>
+                      <td style={{ padding: '6px 10px', fontSize: 11 }}><span style={{ color: '#f59e0b' }}>{d._matchedBy}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button className="btn btn-g" onClick={() => setInFileDupModal(null)}>Annuller</button>
+              <button className="btn btn-g" style={{ borderColor: '#f59e0b44', color: '#f59e0b' }} onClick={async () => { setInFileDupModal(null); await runDbDupCheck(inFileDupModal.dups.concat(inFileDupModal.unique)); }}>
+                Behold alle ({inFileDupModal.unique.length + inFileDupModal.dups.length})
+              </button>
+              <button className="btn btn-p" onClick={async () => { setInFileDupModal(null); await runDbDupCheck(inFileDupModal.unique); }}>
+                Fjern dubletter – importér {inFileDupModal.unique.length}
+              </button>
             </div>
           </div>
         </div>
