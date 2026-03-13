@@ -720,6 +720,7 @@ export default function CRMApp() {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef();
   const excelRef = useRef();
+  const dragSelRef = useRef({ active: false, mode: true, startIdx: -1, originalSel: null });
   const [lastImportIds, setLastImportIds] = useState([]);
   const [deleteAllStep, setDeleteAllStep] = useState(0);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
@@ -752,6 +753,13 @@ export default function CRMApp() {
   useEffect(() => {
     if (user?.email) setNewOtr(o => ({ ...o, by: user.email }));
   }, [user]);
+
+  // ── Drag-select: stop on mouseup anywhere ───────────────────────────────
+  useEffect(() => {
+    const up = () => { dragSelRef.current.active = false; };
+    document.addEventListener('mouseup', up);
+    return () => document.removeEventListener('mouseup', up);
+  }, []);
 
   // ── Load from Supabase ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1921,6 +1929,26 @@ export default function CRMApp() {
     setSaving(false);
   };
 
+  const enrichLeads = async () => {
+    setSaving(true);
+    try {
+      const toEnrich = dupModal.duplicates.filter(d => Object.keys(d._newFields).length > 0);
+      for (const d of toEnrich) {
+        const { error } = await supabase.from('leads').update(d._newFields).eq('id', d._existing.id);
+        if (error) console.warn('Enrich fejl:', d.name, error.message);
+      }
+      if (toEnrich.length > 0) msg(`${toEnrich.length} leads opdateret med nye felter`);
+      if (dupModal.nonDuplicates.length > 0) {
+        await importLeads(dupModal.nonDuplicates);
+      } else {
+        setDupModal(null);
+        await loadLeads();
+        setIText(''); setIPrev([]);
+      }
+    } catch (e) { msg('Fejl: ' + e.message, 'err'); }
+    setSaving(false);
+  };
+
   const undoImport = async () => {
     if (!lastImportIds.length) return;
     if (!confirm(`Fortryd import? ${lastImportIds.length} leads vil blive slettet permanent.`)) return;
@@ -1939,6 +1967,9 @@ export default function CRMApp() {
     setSaving(false);
   };
 
+  const ENRICH_FIELDS = ['category', 'country', 'phone', 'city', 'website', 'contact_person'];
+  const ENRICH_LABELS = { category: 'kategori', country: 'land', phone: 'telefon', city: 'by', website: 'website', contact_person: 'kontakt' };
+
   const checkAndImport = async () => {
     if (!iPrev.length) return;
     const emailMap = new Map();
@@ -1953,15 +1984,21 @@ export default function CRMApp() {
       const emailMatch = l.email && emailMap.has(l.email.toLowerCase().trim());
       const nameMatch = !l.email && nameMap.has((l.name || '').toLowerCase().trim());
       if (emailMatch || nameMatch) {
-        duplicates.push({ ...l, _matchedBy: emailMatch ? 'email' : 'navn', _existing: emailMatch ? emailMap.get(l.email.toLowerCase().trim()) : nameMap.get((l.name || '').toLowerCase().trim()) });
+        const existing = emailMatch ? emailMap.get(l.email.toLowerCase().trim()) : nameMap.get((l.name || '').toLowerCase().trim());
+        const newFields = {};
+        for (const f of ENRICH_FIELDS) {
+          if (l[f] && !existing[f]) newFields[f] = l[f];
+        }
+        duplicates.push({ ...l, _matchedBy: emailMatch ? 'email' : 'navn', _existing: existing, _newFields: newFields });
       } else {
         nonDuplicates.push(l);
       }
     }
+    const enrichable = duplicates.filter(d => Object.keys(d._newFields).length > 0);
     if (duplicates.length === 0) {
       await importLeads(iPrev);
     } else {
-      setDupModal({ duplicates, nonDuplicates });
+      setDupModal({ duplicates, nonDuplicates, enrichable });
     }
   };
 
@@ -3515,11 +3552,29 @@ export default function CRMApp() {
                 </tr></thead>
                 <tbody>
                   {!sorted.length && <tr><td colSpan={bulk ? 8 : 7} style={{ padding: 32, textAlign: 'center', color: '#4b5563' }}>Ingen leads fundet. <button className="btn btn-g" onClick={openAdd} style={{ marginLeft: 8 }}>+ Tilføj</button></td></tr>}
-                  {sorted.map(lead => (
-                    <tr key={lead.id} className={bulk ? '' : 'rh'} style={{ borderBottom: '1px solid #0d1420', background: bulkSel.has(lead.id) ? '#7c3aed10' : 'transparent', cursor: bulk ? 'default' : 'pointer' }}
-                      onClick={() => { if (!bulk) { setSel(lead); setView('detail'); } }}>
-                      {bulk && <td style={{ padding: '10px 8px 10px 14px' }} onClick={e => { e.stopPropagation(); const n = new Set(bulkSel); n.has(lead.id) ? n.delete(lead.id) : n.add(lead.id); setBulkSel(n); }}>
-                        <input type="checkbox" checked={bulkSel.has(lead.id)} readOnly style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#7c3aed' }} />
+                  {sorted.map((lead, leadIdx) => (
+                    <tr key={lead.id} className={bulk ? '' : 'rh'} style={{ borderBottom: '1px solid #0d1420', background: bulkSel.has(lead.id) ? '#7c3aed10' : 'transparent', cursor: bulk ? 'default' : 'pointer', userSelect: bulk ? 'none' : 'auto' }}
+                      onClick={() => { if (!bulk) { setSel(lead); setView('detail'); } }}
+                      onMouseEnter={() => {
+                        if (!bulk || !dragSelRef.current.active) return;
+                        const { startIdx, mode, originalSel } = dragSelRef.current;
+                        const from = Math.min(startIdx, leadIdx);
+                        const to = Math.max(startIdx, leadIdx);
+                        const n = new Set(originalSel);
+                        for (let i = from; i <= to; i++) { mode ? n.add(sorted[i].id) : n.delete(sorted[i].id); }
+                        setBulkSel(n);
+                      }}>
+                      {bulk && <td style={{ padding: '10px 8px 10px 14px' }}
+                        onMouseDown={e => {
+                          e.preventDefault();
+                          const isSelected = bulkSel.has(lead.id);
+                          dragSelRef.current = { active: true, mode: !isSelected, startIdx: leadIdx, originalSel: new Set(bulkSel) };
+                          const n = new Set(bulkSel);
+                          isSelected ? n.delete(lead.id) : n.add(lead.id);
+                          setBulkSel(n);
+                        }}
+                        onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={bulkSel.has(lead.id)} readOnly style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#7c3aed', pointerEvents: 'none' }} />
                       </td>}
                       <td style={{ padding: '10px 14px', fontWeight: 600, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lead.name}</td>
                       <td style={{ padding: '10px 14px' }}><span className="tag">{lead.category}</span></td>
@@ -4293,6 +4348,7 @@ export default function CRMApp() {
             <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 14 }}>
               Disse leads findes allerede i databasen (matchet på {dupModal.duplicates.some(d => d._matchedBy === 'email') ? 'email' : 'navn'}).
               {dupModal.nonDuplicates.length > 0 && ` ${dupModal.nonDuplicates.length} nye leads er klar til import.`}
+              {dupModal.enrichable?.length > 0 && <span style={{ color: '#4ade80' }}> {dupModal.enrichable.length} eksisterende har nye felter der kan tilføjes.</span>}
             </div>
             <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16, border: '1px solid #1f2937', borderRadius: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -4308,7 +4364,12 @@ export default function CRMApp() {
                     <tr key={i} style={{ borderBottom: '1px solid #0d1420', background: i % 2 ? '#ffffff03' : 'transparent' }}>
                       <td style={{ padding: '6px 10px', fontWeight: 600, color: '#e2e8f0' }}>{d.name}<br /><span style={{ color: '#38bdf8', fontWeight: 400 }}>{d.email || '—'}</span></td>
                       <td style={{ padding: '6px 10px', color: '#9ca3af' }}>{d._existing?.name}<br /><span style={{ color: '#38bdf8' }}>{d._existing?.email || '—'}</span></td>
-                      <td style={{ padding: '6px 10px', color: '#f59e0b', fontSize: 11 }}>{d._matchedBy}</td>
+                      <td style={{ padding: '6px 10px', fontSize: 11 }}>
+                        <span style={{ color: '#f59e0b' }}>{d._matchedBy}</span>
+                        {Object.keys(d._newFields || {}).length > 0 && (
+                          <span style={{ display: 'block', color: '#4ade80', marginTop: 2 }}>+ {Object.keys(d._newFields).map(f => ENRICH_LABELS[f] || f).join(', ')}</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -4319,6 +4380,11 @@ export default function CRMApp() {
               {dupModal.nonDuplicates.length > 0 && (
                 <button className="btn btn-p" onClick={() => importLeads(dupModal.nonDuplicates)}>
                   Tilføj kun nye ({dupModal.nonDuplicates.length})
+                </button>
+              )}
+              {dupModal.enrichable?.length > 0 && (
+                <button className="btn btn-g" style={{ borderColor: '#4ade8044', color: '#4ade80' }} onClick={enrichLeads}>
+                  Tilføj nye felter ({dupModal.enrichable.length})
                 </button>
               )}
               <button className="btn btn-g" style={{ borderColor: '#f59e0b44', color: '#f59e0b' }} onClick={() => importLeads([...dupModal.nonDuplicates, ...dupModal.duplicates])}>
