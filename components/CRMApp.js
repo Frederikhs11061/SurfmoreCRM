@@ -721,6 +721,7 @@ export default function CRMApp() {
   const fileRef = useRef();
   const excelRef = useRef();
   const dragSelRef = useRef({ active: false, mode: true, startIdx: -1, originalSel: null });
+  const dragMouseY = useRef(0);
   const [lastImportIds, setLastImportIds] = useState([]);
   const [deleteAllStep, setDeleteAllStep] = useState(0);
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
@@ -756,33 +757,25 @@ export default function CRMApp() {
 
   // ── Drag-select: stop on mouseup, auto-scroll while dragging ───────────
   useEffect(() => {
-    let scrollRAF = null;
-    let mouseY = 0;
-    const up = () => {
-      dragSelRef.current.active = false;
-      if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
-    };
-    const onMove = e => {
-      mouseY = e.clientY;
-      if (!dragSelRef.current.active) return;
-      if (scrollRAF) return; // already looping
-      const scroll = () => {
-        if (!dragSelRef.current.active) { scrollRAF = null; return; }
+    const up = () => { dragSelRef.current.active = false; };
+    const onMove = e => { dragMouseY.current = e.clientY; };
+    // Always-running RAF loop — scrolls only when drag is active and cursor is in zone
+    const loop = () => {
+      if (dragSelRef.current.active) {
         const el = document.querySelector('.crm-content');
-        const zone = 80, speed = 10, vh = window.innerHeight;
-        if (mouseY < zone) { el ? (el.scrollTop -= speed) : window.scrollBy(0, -speed); }
-        else if (mouseY > vh - zone) { el ? (el.scrollTop += speed) : window.scrollBy(0, speed); }
-        else { scrollRAF = null; return; }
-        scrollRAF = requestAnimationFrame(scroll);
-      };
-      scrollRAF = requestAnimationFrame(scroll);
+        const zone = 80, speed = 12, vh = window.innerHeight, y = dragMouseY.current;
+        if (y < zone && el) el.scrollTop -= speed;
+        else if (y > vh - zone && el) el.scrollTop += speed;
+      }
+      requestAnimationFrame(loop);
     };
+    const rafId = requestAnimationFrame(loop);
     document.addEventListener('mouseup', up);
     document.addEventListener('mousemove', onMove);
     return () => {
       document.removeEventListener('mouseup', up);
       document.removeEventListener('mousemove', onMove);
-      if (scrollRAF) cancelAnimationFrame(scrollRAF);
+      cancelAnimationFrame(rafId);
     };
   }, []);
 
