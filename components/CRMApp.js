@@ -401,19 +401,19 @@ function buildColMap(headerRow) {
   const map = { otrCols: [] };
   const lower = (headerRow || []).map(h => (h || '').toLowerCase().trim());
   lower.forEach((h, i) => {
-    if (h.includes('navn') || h === 'name') map.navn = i;
-    else if (h.includes('underkategori') || h.includes('subcategory')) map.underkategori = i;
-    else if (h.includes('kategori')) map.kategori = i;
-    else if (h.includes('land') || h === 'country') map.land = i;
-    else if (h.includes('mail') || h === 'email') map.mail = i;
-    else if (h.includes('telefon') || h === 'phone') map.telefon = i;
-    else if (h === 'by' || h.includes('city')) map.by = i;
-    else if (h.includes('website') || h.includes('webside') || h.includes('hjemmeside')) map.website = i;
+    if (map.navn == null && (h.includes('navn') || h === 'name' || h === 'klubber')) map.navn = i;
+    else if (map.underkategori == null && (h.includes('underkategori') || h.includes('subcategory') || h.includes('subkategori'))) map.underkategori = i;
+    else if (map.kategori == null && (h.includes('kategori') || h === 'type' || h === 'gruppe')) map.kategori = i;
+    else if (map.land == null && (h.includes('land') || h === 'country' || h === 'nation')) map.land = i;
+    else if (map.mail == null && (h.includes('mail') || h === 'email' || h.includes('e-mail'))) map.mail = i;
+    else if (map.telefon == null && (h.includes('telefon') || h === 'phone' || h.includes('tlf') || h.includes('mobil'))) map.telefon = i;
+    else if (map.by == null && (h === 'by' || h.includes('city') || h === 'sted' || h.includes('postby') || h.includes('postort'))) map.by = i;
+    else if (map.website == null && (h.includes('website') || h.includes('webside') || h.includes('hjemmeside') || h.includes('url') || h.includes('web'))) map.website = i;
     else if (h.includes('outreach')) map.otrCols.push(i);
-    else if (h.includes('salg') || h.includes('udbytte') || h.includes('sale')) map.salg = i;
-    else if (h.includes('kontaktperson') || h.includes('contact')) map.kontaktperson = i;
-    else if (h.includes('produkt') || h === 'product') map.produkt = i;
-    else if (h === 'noter' || h === 'note' || h === 'notes') map.notes = i;
+    else if (map.salg == null && (h.includes('salg') || h.includes('udbytte') || h.includes('sale') || h.includes('købt') || h.includes('bestilt'))) map.salg = i;
+    else if (map.kontaktperson == null && (h.includes('kontaktperson') || h.includes('contact') || h.includes('kontakt'))) map.kontaktperson = i;
+    else if (map.produkt == null && (h.includes('produkt') || h === 'product')) map.produkt = i;
+    else if (map.notes == null && (h === 'noter' || h === 'note' || h === 'notes' || h.includes('kommentar') || h.includes('bemærkning'))) map.notes = i;
   });
   return map;
 }
@@ -860,9 +860,19 @@ export default function CRMApp() {
       headerIdx >= 0 &&
       (colMap.navn != null || colMap.mail != null || colMap.land != null || colMap.kategori != null);
     const dataRows = headerIdx >= 0 ? rows.filter((_, i) => i !== headerIdx) : rows;
-    return dataRows.map(row =>
+    const parsed = dataRows.map(row =>
       useHeaderFormat ? parseLineWithMap(row, colMap, '', '') : parseLineLegacy(row, '', '')
     ).filter(Boolean);
+    // Carry-forward: if a row has no category/country, inherit from the previous row.
+    // Handles Excel merged cells and sheets where values are only written once per group.
+    let lastCat = '', lastCountry = '';
+    for (const lead of parsed) {
+      if (lead.category) lastCat = lead.category;
+      else if (lastCat) lead.category = lastCat;
+      if (lead.country) lastCountry = lead.country;
+      else if (lastCountry) lead.country = lastCountry;
+    }
+    return parsed;
   };
 
   // Dynamic unique categories from loaded leads (sorted)
@@ -3019,9 +3029,23 @@ export default function CRMApp() {
                         const data = new Uint8Array(ev.target.result);
                         const wb = XLSX.read(data, { type: 'array' });
                         let allLeads = [];
-                        wb.SheetNames.forEach(name => {
-                          const ws = wb.Sheets[name];
+                        wb.SheetNames.forEach(sheetName => {
+                          const ws = wb.Sheets[sheetName];
                           if (!ws) return;
+                          // Expand merged cells: copy the top-left value into every cell in the merge range.
+                          // Without this, XLSX.sheet_to_csv leaves merged cells after the first one empty,
+                          // which causes category/country to be missing for rows below a merged cell.
+                          if (ws['!merges']) {
+                            for (const merge of ws['!merges']) {
+                              const masterCell = ws[XLSX.utils.encode_cell(merge.s)];
+                              for (let ri = merge.s.r; ri <= merge.e.r; ri++) {
+                                for (let ci = merge.s.c; ci <= merge.e.c; ci++) {
+                                  if (ri === merge.s.r && ci === merge.s.c) continue;
+                                  ws[XLSX.utils.encode_cell({ r: ri, c: ci })] = masterCell ? { ...masterCell } : { t: 's', v: '' };
+                                }
+                              }
+                            }
+                          }
                           const csv = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
                           const leadsFromSheet = runP(csv);
                           allLeads = allLeads.concat(leadsFromSheet);
