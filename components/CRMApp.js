@@ -754,11 +754,36 @@ export default function CRMApp() {
     if (user?.email) setNewOtr(o => ({ ...o, by: user.email }));
   }, [user]);
 
-  // ── Drag-select: stop on mouseup anywhere ───────────────────────────────
+  // ── Drag-select: stop on mouseup, auto-scroll while dragging ───────────
   useEffect(() => {
-    const up = () => { dragSelRef.current.active = false; };
+    let scrollRAF = null;
+    let mouseY = 0;
+    const up = () => {
+      dragSelRef.current.active = false;
+      if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+    };
+    const onMove = e => {
+      mouseY = e.clientY;
+      if (!dragSelRef.current.active) return;
+      if (scrollRAF) return; // already looping
+      const scroll = () => {
+        if (!dragSelRef.current.active) { scrollRAF = null; return; }
+        const el = document.querySelector('.crm-content');
+        const zone = 80, speed = 10, vh = window.innerHeight;
+        if (mouseY < zone) { el ? (el.scrollTop -= speed) : window.scrollBy(0, -speed); }
+        else if (mouseY > vh - zone) { el ? (el.scrollTop += speed) : window.scrollBy(0, speed); }
+        else { scrollRAF = null; return; }
+        scrollRAF = requestAnimationFrame(scroll);
+      };
+      scrollRAF = requestAnimationFrame(scroll);
+    };
     document.addEventListener('mouseup', up);
-    return () => document.removeEventListener('mouseup', up);
+    document.addEventListener('mousemove', onMove);
+    return () => {
+      document.removeEventListener('mouseup', up);
+      document.removeEventListener('mousemove', onMove);
+      if (scrollRAF) cancelAnimationFrame(scrollRAF);
+    };
   }, []);
 
   // ── Load from Supabase ──────────────────────────────────────────────────
@@ -3079,13 +3104,13 @@ export default function CRMApp() {
                   <div className="table-wrapper" style={{ maxHeight: 240, overflow: 'auto', marginBottom: 14, border: '1px solid #1f2937', borderRadius: 8 }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead><tr style={{ background: '#080d18', position: 'sticky', top: 0 }}>
-                        {['Navn', 'Email', 'By', 'Status', 'Outreach', 'Salg'].map(h => <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>{h}</th>)}
+                        {['Navn', 'Email', 'Kategori', 'Status', 'Outreach', 'Salg'].map(h => <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: '#4b5563', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', borderBottom: '1px solid #1f2937' }}>{h}</th>)}
                       </tr></thead>
                       <tbody>{iPrev.map((l, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid #0d1420', background: i % 2 ? '#ffffff03' : 'transparent' }}>
                           <td style={{ padding: '5px 10px', fontWeight: 600, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</td>
                           <td style={{ padding: '5px 10px', color: l.email ? '#38bdf8' : '#ef4444', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.email || 'mangler'}</td>
-                          <td style={{ padding: '5px 10px', color: '#4b5563' }}>{l.city || '—'}</td>
+                          <td style={{ padding: '5px 10px', color: '#9ca3af', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.category || '—'}</td>
                           <td style={{ padding: '5px 10px' }}><StatusBadge value={l.status} /></td>
                           <td style={{ padding: '5px 10px', color: '#f59e0b' }}>{l._outreaches?.length > 0 ? l._outreaches.length + 'x' : '—'}</td>
                           <td style={{ padding: '5px 10px', color: l.sale_info ? '#22c55e' : '#4b5563', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.sale_info || l.product || '—'}</td>
