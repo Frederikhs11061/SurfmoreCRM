@@ -727,6 +727,10 @@ export default function CRMApp() {
   const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('');
   const [dupModal, setDupModal] = useState(null);
   const [inFileDupModal, setInFileDupModal] = useState(null);
+  const [activityLog, setActivityLog] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('crmActivityLog') || '[]'); } catch { return []; }
+  });
+  const [showAllOtrCats, setShowAllOtrCats] = useState(false);
   const [previewTpl, setPreviewTpl] = useState(null);
 
   // ── Auth session ────────────────────────────────────────────────────────
@@ -1459,10 +1463,12 @@ export default function CRMApp() {
   const delLead = async id => {
     if (!confirm('Slet dette lead?')) return;
     try {
+      const deleted = leads.find(l => l.id === id);
       await supabase.from('outreaches').delete().eq('lead_id', id);
       const { error } = await supabase.from('leads').delete().eq('id', id);
       if (error) throw error;
       setLeads(leads.filter(l => l.id !== id));
+      logActivity({ type: 'delete', id: 'del-' + Date.now(), timestamp: new Date().toISOString(), count: 1, name: deleted?.name || '?', category: deleted?.category || '', country: deleted?.country || '' });
       setView('list'); msg('Slettet');
     } catch (e) { msg('Fejl: ' + e.message, 'err'); }
   };
@@ -1951,6 +1957,15 @@ export default function CRMApp() {
       else msg(list.length + ' leads importeret');
       setLastImportIds(importedIds);
       setDupModal(null);
+      // Build import activity entry
+      const bkd = {};
+      for (const lead of list) {
+        const k = (lead.category || 'Andet') + '|' + (lead.country || '');
+        if (!bkd[k]) bkd[k] = { category: lead.category || 'Andet', country: lead.country || '', count: 0 };
+        bkd[k].count++;
+      }
+      const breakdown = Object.values(bkd).sort((a, b) => b.count - a.count);
+      logActivity({ type: 'import', id: 'imp-' + Date.now(), timestamp: new Date().toISOString(), count: importedIds.length, breakdown, importedIds });
       await loadLeads();
       setIText(''); setIPrev([]);
       // Stay on import page so user can undo
@@ -1992,8 +2007,17 @@ export default function CRMApp() {
       setLeads(prev => prev.filter(l => !lastImportIds.includes(l.id)));
       setLastImportIds([]);
       msg('Import fortrudt');
+      logActivity({ type: 'delete', id: 'del-' + Date.now(), timestamp: new Date().toISOString(), count: lastImportIds.length, reason: 'Fortryd import' });
     } catch (e) { msg('Fejl: ' + e.message, 'err'); }
     setSaving(false);
+  };
+
+  const logActivity = (entry) => {
+    setActivityLog(prev => {
+      const next = [entry, ...prev].slice(0, 100);
+      try { localStorage.setItem('crmActivityLog', JSON.stringify(next)); } catch {}
+      return next;
+    });
   };
 
   const ENRICH_FIELDS = ['category', 'country', 'phone', 'city', 'website', 'contact_person'];
@@ -2467,19 +2491,9 @@ export default function CRMApp() {
           ];
           const maxPipe = Math.max(...pipelineStages.map(s => s.count), 1);
 
-          // Recent activity: batch imports (grouped by date, with category breakdown) + outreaches by category
-          const importBatches = (() => {
-            const groups = {};
-            for (const l of leads) {
-              const d = (l.created_at || '').slice(0, 10);
-              if (!d) continue;
-              if (!groups[d]) groups[d] = { date: d, count: 0, cats: {} };
-              groups[d].count++;
-              const { base } = splitCategory(l.category || 'Andet');
-              groups[d].cats[base] = (groups[d].cats[base] || 0) + 1;
-            }
-            return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 3);
-          })();
+          // Recent activity from log (imports + deletes), last 6
+          const recentActivity = activityLog.slice(0, 6);
+
           const outreachesByCategory = (() => {
             const groups = {};
             for (const l of leads) {
@@ -2583,50 +2597,85 @@ export default function CRMApp() {
                     <button className="btn btn-g" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => setView('activity')}>Se alle →</button>
                   </div>
 
-                  {/* Batch imports with category breakdown */}
-                  {importBatches.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Imports</div>
-                      {importBatches.map((b, i) => {
-                        const topCats = Object.entries(b.cats || {}).sort((x, y) => y[1] - x[1]).slice(0, 3);
-                        return (
-                          <div key={b.date} style={{ padding: '7px 0', borderBottom: i < importBatches.length - 1 ? '1px solid #0d1420' : 'none' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0 }} />
-                              <div style={{ flex: 1, fontSize: 12, fontWeight: 600 }}>{b.count} leads tilføjet</div>
-                              <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(b.date)}</div>
-                            </div>
-                            {topCats.length > 0 && (
-                              <div style={{ paddingLeft: 17, marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
-                                {topCats.map(([cat, cnt]) => (
-                                  <span key={cat} style={{ fontSize: 10, color: '#4b5563' }}>{cat}: {cnt}</span>
-                                ))}
+                  {/* Activity log entries */}
+                  {recentActivity.length === 0 && <div style={{ color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu – importer leads for at komme i gang.</div>}
+                  {recentActivity.map((a, i) => {
+                    const ts = a.timestamp ? new Date(a.timestamp) : null;
+                    const timeStr = ts ? ts.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) + ' · ' + ts.toLocaleDateString('da-DK', { day: 'numeric', month: 'short' }) : '';
+                    if (a.type === 'import') {
+                      const top = a.breakdown?.[0];
+                      const { base: topBase } = top ? splitCategory(top.category) : { base: '' };
+                      const countries = [...new Set((a.breakdown || []).map(b => b.country).filter(Boolean))];
+                      const countryStr = countries.slice(0, 2).join(', ') + (countries.length > 2 ? ` +${countries.length - 2}` : '');
+                      const cats = a.breakdown || [];
+                      return (
+                        <div key={a.id} style={{ padding: '9px 0', borderBottom: i < recentActivity.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
+                          onClick={() => {
+                            resetFiltersAndSort();
+                            if (cats.length === 1) { setFCats(new Set([cats[0].category])); }
+                            if (countries.length === 1) setFCountry(countries[0]);
+                            setFStatus('not_contacted');
+                            setView('list');
+                          }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#6366f1', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span>{a.count} leads importeret</span>
+                                {countryStr && <span style={{ color: '#38bdf8', fontWeight: 400 }}>· {countryStr}</span>}
+                                <span style={{ fontSize: 10, color: '#22c55e', background: '#22c55e15', border: '1px solid #22c55e30', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>Klar til outreach</span>
                               </div>
-                            )}
+                              <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
+                                {cats.slice(0, 3).map(b => {
+                                  const { base: bBase } = splitCategory(b.category);
+                                  return <span key={b.category} style={{ fontSize: 10, color: '#6b7280' }}>{bBase}{b.country ? ` (${b.country})` : ''}: {b.count}</span>;
+                                })}
+                                {cats.length > 3 && <span style={{ fontSize: 10, color: '#4b5563' }}>+{cats.length - 3} mere</span>}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 10, color: '#4b5563', flexShrink: 0, textAlign: 'right' }}>{timeStr}</div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        </div>
+                      );
+                    }
+                    if (a.type === 'delete') {
+                      return (
+                        <div key={a.id} style={{ padding: '9px 0', borderBottom: i < recentActivity.length - 1 ? '1px solid #0d1420' : 'none' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#ef4444' }}>
+                                {a.reason || (a.count === 1 ? `Slettet: ${a.name}` : `${a.count} leads slettet`)}
+                              </div>
+                              {a.category && <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{a.category}{a.country ? ` · ${a.country}` : ''}</div>}
+                            </div>
+                            <div style={{ fontSize: 10, color: '#4b5563', flexShrink: 0, textAlign: 'right' }}>{timeStr}</div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
 
-                  {/* Outreaches grouped by category */}
+                  {/* Outreaches grouped by category – collapsed */}
                   {outreachesByCategory.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Outreaches pr. kategori</div>
-                      {outreachesByCategory.map((g, i) => (
-                        <div key={g.category} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderBottom: i < outreachesByCategory.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
+                    <div style={{ marginTop: recentActivity.length > 0 ? 12 : 0, paddingTop: recentActivity.length > 0 ? 12 : 0, borderTop: recentActivity.length > 0 ? '1px solid #0d1420' : 'none' }}>
+                      <div style={{ fontSize: 10, color: '#4b5563', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Outreaches pr. kategori</div>
+                      {(showAllOtrCats ? outreachesByCategory : outreachesByCategory.slice(0, 4)).map((g, i, arr) => (
+                        <div key={g.category} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '5px 0', borderBottom: i < arr.length - 1 ? '1px solid #0d1420' : 'none', cursor: 'pointer' }}
                           onClick={() => { setFCats(new Set([g.category])); setView('list'); }}>
-                          <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#3b82f6', marginTop: 4, flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600 }}>{g.base}{g.sub ? ` (${g.sub})` : ''}</div>
-                            <div style={{ fontSize: 11, color: '#4b5563' }}>{g.count} outreach{g.count !== 1 ? 'es' : ''} sendt</div>
-                          </div>
-                          <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{fmtDate(g.lastDate)}</div>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.base}{g.sub ? ` (${g.sub})` : ''}</div>
+                          <div style={{ fontSize: 11, color: '#4b5563', flexShrink: 0 }}>{g.count}x · {fmtDate(g.lastDate)}</div>
                         </div>
                       ))}
+                      {outreachesByCategory.length > 4 && (
+                        <button className="btn btn-g" style={{ fontSize: 11, marginTop: 6, padding: '3px 10px' }} onClick={() => setShowAllOtrCats(v => !v)}>
+                          {showAllOtrCats ? 'Vis færre ↑' : `Vis alle ${outreachesByCategory.length} kategorier ↓`}
+                        </button>
+                      )}
                     </div>
                   )}
-                  {importBatches.length === 0 && outreachesByCategory.length === 0 && <div style={{ color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu</div>}
                 </div>
               </div>
 
@@ -4060,24 +4109,18 @@ export default function CRMApp() {
               leadId: l.id,
               id: o.id,
             }))),
-            ...(() => {
-              const groups = {};
-              for (const l of leads) {
-                const d = (l.created_at || '').slice(0, 10);
-                if (!d) continue;
-                if (!groups[d]) groups[d] = { date: d, count: 0 };
-                groups[d].count++;
+            ...activityLog.map(a => {
+              if (a.type === 'import') {
+                const countries = [...new Set((a.breakdown || []).map(b => b.country).filter(Boolean))];
+                const cats = (a.breakdown || []).map(b => { const { base } = splitCategory(b.category); return `${base}${b.country ? ` (${b.country})` : ''}: ${b.count}`; }).slice(0, 4).join(' · ');
+                return { type: 'import', date: a.timestamp?.slice(0, 10) || '', timestamp: a.timestamp, title: `${a.count} leads importeret`, sub: cats, by: countries.join(', '), id: a.id, breakdown: a.breakdown };
               }
-              return Object.values(groups).map(b => ({
-                type: 'import',
-                date: b.date,
-                title: b.count + ' leads importeret',
-                sub: '',
-                by: '',
-                id: 'imp-' + b.date,
-              }));
-            })(),
-          ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+              if (a.type === 'delete') {
+                return { type: 'delete', date: a.timestamp?.slice(0, 10) || '', timestamp: a.timestamp, title: a.reason || (a.count === 1 ? `Slettet: ${a.name}` : `${a.count} leads slettet`), sub: a.category ? `${a.category}${a.country ? ' · ' + a.country : ''}` : '', id: a.id };
+              }
+              return null;
+            }).filter(Boolean),
+          ].sort((a, b) => ((b.timestamp || b.date) || '').localeCompare((a.timestamp || a.date) || ''));
 
           return (
             <div style={{ padding: 28, maxWidth: 720 }}>
@@ -4090,17 +4133,29 @@ export default function CRMApp() {
                 {allActivity.length === 0 && <div style={{ padding: 24, color: '#4b5563', fontSize: 13 }}>Ingen aktivitet endnu</div>}
                 {allActivity.map((a, i) => (
                   <div key={a.id || i}
-                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 18px', borderBottom: i < allActivity.length - 1 ? '1px solid #0d1420' : 'none', cursor: a.type === 'outreach' ? 'pointer' : 'default' }}
-                    onClick={() => { if (a.type === 'outreach') { const l = leads.find(x => x.id === a.leadId); if (l) { setSel(l); setView('detail'); } } }}
+                    style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 18px', borderBottom: i < allActivity.length - 1 ? '1px solid #0d1420' : 'none', cursor: (a.type === 'outreach' || a.type === 'import') ? 'pointer' : 'default' }}
+                    onClick={() => {
+                      if (a.type === 'outreach') { const l = leads.find(x => x.id === a.leadId); if (l) { setSel(l); setView('detail'); } }
+                      if (a.type === 'import' && a.breakdown?.length) {
+                        resetFiltersAndSort();
+                        const cats = [...new Set(a.breakdown.map(b => b.category))];
+                        if (cats.length === 1) setFCats(new Set(cats));
+                        const countries = [...new Set(a.breakdown.map(b => b.country).filter(Boolean))];
+                        if (countries.length === 1) setFCountry(countries[0]);
+                        setFStatus('not_contacted');
+                        setView('list');
+                      }
+                    }}
                   >
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'outreach' ? (a.sale ? '#22c55e' : '#3b82f6') : '#6366f1', marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: a.type === 'outreach' ? (a.sale ? '#22c55e' : '#3b82f6') : a.type === 'delete' ? '#ef4444' : '#6366f1', marginTop: 5, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: a.type === 'delete' ? '#ef4444' : undefined }}>{a.title}</div>
                       {a.sub && <div style={{ fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.sub}</div>}
                       {a.sale && <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 600 }}>Salg: {a.sale}</div>}
-                      {a.by && <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>af {a.by}</div>}
+                      {a.type === 'outreach' && a.by && <div style={{ fontSize: 11, color: '#4b5563', marginTop: 2 }}>af {a.by}</div>}
+                      {a.type === 'import' && <div style={{ fontSize: 10, color: '#22c55e', marginTop: 2 }}>Klik for at se leads →</div>}
                     </div>
-                    <div style={{ fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtDate(a.date)}</div>
+                    <div style={{ fontSize: 11, color: '#4b5563', whiteSpace: 'nowrap', flexShrink: 0 }}>{a.timestamp ? new Date(a.timestamp).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }) + ' · ' + fmtDate(a.date) : fmtDate(a.date)}</div>
                   </div>
                 ))}
               </div>
