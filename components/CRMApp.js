@@ -2491,8 +2491,32 @@ export default function CRMApp() {
           ];
           const maxPipe = Math.max(...pipelineStages.map(s => s.count), 1);
 
-          // Recent activity from log (imports + deletes), last 6
-          const recentActivity = activityLog.slice(0, 6);
+          // Build activity list: activityLog entries + historical import batches from DB for dates not in log
+          const logDates = new Set(activityLog.filter(a => a.type === 'import').map(a => a.timestamp?.slice(0, 10)).filter(Boolean));
+          const historicBatches = (() => {
+            const groups = {};
+            for (const l of leads) {
+              const d = (l.created_at || '').slice(0, 10);
+              if (!d || logDates.has(d)) continue;
+              if (!groups[d]) groups[d] = { date: d, count: 0, bkd: {} };
+              groups[d].count++;
+              const k = (l.category || 'Andet') + '|' + (l.country || '');
+              if (!groups[d].bkd[k]) groups[d].bkd[k] = { category: l.category || 'Andet', country: l.country || '', count: 0 };
+              groups[d].bkd[k].count++;
+            }
+            return Object.values(groups).map(b => ({
+              type: 'import',
+              id: 'hist-' + b.date,
+              timestamp: b.date + 'T00:00:00',
+              date: b.date,
+              count: b.count,
+              breakdown: Object.values(b.bkd).sort((x, y) => y.count - x.count),
+            }));
+          })();
+          const recentActivity = [
+            ...activityLog,
+            ...historicBatches,
+          ].sort((a, b) => ((b.timestamp || b.date) || '').localeCompare((a.timestamp || a.date) || '')).slice(0, 8);
 
           const outreachesByCategory = (() => {
             const groups = {};
@@ -4120,6 +4144,26 @@ export default function CRMApp() {
               }
               return null;
             }).filter(Boolean),
+            // Historical import batches from DB for dates not in activityLog
+            ...(() => {
+              const logDates2 = new Set(activityLog.filter(a => a.type === 'import').map(a => a.timestamp?.slice(0, 10)).filter(Boolean));
+              const groups = {};
+              for (const l of leads) {
+                const d = (l.created_at || '').slice(0, 10);
+                if (!d || logDates2.has(d)) continue;
+                if (!groups[d]) groups[d] = { date: d, count: 0, bkd: {} };
+                groups[d].count++;
+                const k = (l.category || 'Andet') + '|' + (l.country || '');
+                if (!groups[d].bkd[k]) groups[d].bkd[k] = { category: l.category || 'Andet', country: l.country || '', count: 0 };
+                groups[d].bkd[k].count++;
+              }
+              return Object.values(groups).map(b => {
+                const bd = Object.values(b.bkd).sort((x, y) => y.count - x.count);
+                const countries = [...new Set(bd.map(x => x.country).filter(Boolean))];
+                const cats = bd.map(x => { const { base } = splitCategory(x.category); return `${base}${x.country ? ` (${x.country})` : ''}: ${x.count}`; }).slice(0, 4).join(' · ');
+                return { type: 'import', id: 'hist-' + b.date, timestamp: b.date + 'T00:00:00', date: b.date, title: `${b.count} leads importeret`, sub: cats, by: countries.join(', '), breakdown: bd };
+              });
+            })(),
           ].sort((a, b) => ((b.timestamp || b.date) || '').localeCompare((a.timestamp || a.date) || ''));
 
           return (
