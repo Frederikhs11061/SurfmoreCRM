@@ -2491,13 +2491,15 @@ export default function CRMApp() {
           ];
           const maxPipe = Math.max(...pipelineStages.map(s => s.count), 1);
 
-          // Build activity list: activityLog entries + historical import batches from DB for dates not in log
-          const logDates = new Set(activityLog.filter(a => a.type === 'import').map(a => a.timestamp?.slice(0, 10)).filter(Boolean));
+          // Build activity list: activityLog entries + historical import batches from DB
+          // Exclude leads already tracked in activityLog by their IDs (not by date)
+          const coveredIds = new Set(activityLog.filter(a => a.type === 'import').flatMap(a => a.importedIds || []));
           const historicBatches = (() => {
             const groups = {};
             for (const l of leads) {
+              if (coveredIds.has(l.id)) continue;
               const d = (l.created_at || '').slice(0, 10);
-              if (!d || logDates.has(d)) continue;
+              if (!d) continue;
               if (!groups[d]) groups[d] = { date: d, count: 0, bkd: {} };
               groups[d].count++;
               const k = (l.category || 'Andet') + '|' + (l.country || '');
@@ -4144,13 +4146,14 @@ export default function CRMApp() {
               }
               return null;
             }).filter(Boolean),
-            // Historical import batches from DB for dates not in activityLog
+            // Historical import batches from DB, excluding leads already tracked by ID in activityLog
             ...(() => {
-              const logDates2 = new Set(activityLog.filter(a => a.type === 'import').map(a => a.timestamp?.slice(0, 10)).filter(Boolean));
+              const coveredIds2 = new Set(activityLog.filter(a => a.type === 'import').flatMap(a => a.importedIds || []));
               const groups = {};
               for (const l of leads) {
+                if (coveredIds2.has(l.id)) continue;
                 const d = (l.created_at || '').slice(0, 10);
-                if (!d || logDates2.has(d)) continue;
+                if (!d) continue;
                 if (!groups[d]) groups[d] = { date: d, count: 0, bkd: {} };
                 groups[d].count++;
                 const k = (l.category || 'Andet') + '|' + (l.country || '');
